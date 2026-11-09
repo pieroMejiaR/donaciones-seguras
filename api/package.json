@@ -5,11 +5,18 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
-    "build": "tsc -p tsconfig.build.json"
+    "build": "node scripts/build.mjs"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.164",
     "@types/node": "^26.6.6",
+    "aws-sdk-client-mock": "^4.1.0",
+    "esbuild": "^0.28.2",
     "vitest": "^5.1.0"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1164.0",
+    "@aws-sdk/lib-dynamodb": "^3.1164.0",
+    "zod": "^4.6.7"
   }
 }

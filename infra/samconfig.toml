@@ -1,0 +1,44 @@
+# Configuración de SAM CLI. Los comandos se ejecutan desde la carpeta infra/.
+# No usar sam build: el código ya sale empaquetado de npm run build (api/dist).
+version = 0.1
+
+# Stack personal de cada integrante (Stage=dev, sin /simulate):
+#   sam deploy --stack-name donaciones-<nombre>
+[default.global.parameters]
+region = "us-east-2"
+
+[default.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+resolve_s3 = true
+confirm_changeset = true
+parameter_overrides = "Stage=dev CognitoStackName=donaciones-cognito"
+
+# Stack compartido para la SPA y la demo (Stage=academic). Lo despliega Piero:
+#   sam deploy --config-env academic
+[academic.global.parameters]
+region = "us-east-2"
+
+[academic.deploy.parameters]
+stack_name = "donaciones-academic"
+capabilities = "CAPABILITY_IAM"
+resolve_s3 = true
+confirm_changeset = true
+parameter_overrides = "Stage=academic CognitoStackName=donaciones-cognito"
+
+[academic.delete.parameters]
+stack_name = "donaciones-academic"
+
+# Stack de identidad compartido (cognito-authorizer.yaml). Se despliega una vez, antes que los demás:
+#   sam deploy --config-env cognito
+[cognito.global.parameters]
+region = "us-east-2"
+
+[cognito.deploy.parameters]
+stack_name = "donaciones-cognito"
+template_file = "cognito-authorizer.yaml"
+resolve_s3 = true
+confirm_changeset = true
+parameter_overrides = "Environment=academic"
+
+[cognito.delete.parameters]
+stack_name = "donaciones-cognito"
