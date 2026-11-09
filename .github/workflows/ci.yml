@@ -33,6 +33,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Validar plantillas SAM
+        run: pipx run --spec cfn-lint==1.58.0 cfn-lint infra/template.yaml infra/cognito-authorizer.yaml --regions us-east-2
+
       - name: Typecheck
         run: npm run typecheck
 

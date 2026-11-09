@@ -32,15 +32,29 @@ export function decodeJwtPayload(token: string): CognitoJwtPayload {
  * Normaliza los grupos de Cognito en un array de roles validos del sistema.
  */
 function extractRolesFromClaims(claims: CognitoJwtPayload): UserRole[] {
-  const rawGroups = claims["cognito:groups"];
-  if (!rawGroups) {
-    return [];
-  }
-
-  const groupArray = Array.isArray(rawGroups) ? rawGroups : [rawGroups];
-  return groupArray.filter((group): group is UserRole =>
+  return parseGroups(claims["cognito:groups"] as unknown).filter((group): group is UserRole =>
     VALID_ROLES.has(group as UserRole),
   );
+}
+
+/**
+ * El JWT authorizer de API Gateway HTTP API entrega cada claim como string: un claim de tipo
+ * arreglo como cognito:groups llega como "[GESTOR DONANTE]". Al decodificar el token
+ * directamente llega como arreglo. Se aceptan ambas formas.
+ */
+function parseGroups(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw.filter((group): group is string => typeof group === "string");
+  }
+
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    const inner =
+      trimmed.startsWith("[") && trimmed.endsWith("]") ? trimmed.slice(1, -1) : trimmed;
+    return inner.split(/[\s,]+/).filter((group) => group.length > 0);
+  }
+
+  return [];
 }
 
 /**

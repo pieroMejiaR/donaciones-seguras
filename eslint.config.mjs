@@ -12,7 +12,7 @@ export default defineConfig([
     languageOptions: { globals: globals.browser },
   },
   {
-    files: ["api/**/*.ts"],
+    files: ["api/**/*.ts", "**/*.mjs"],
     languageOptions: { globals: globals.node },
   },
 ]);

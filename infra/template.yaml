@@ -1,0 +1,486 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Plataforma de Donaciones Seguras: API HTTP, funciones Lambda y tablas DynamoDB.
+  El JWT authorizer usa el User Pool del stack de Cognito (cognito-authorizer.yaml).
+  Responsable: Piero Mejia (lider tecnico y DevOps).
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - academic
+    Description: Stage del API. POST /v1/donations/{id}/simulate solo existe en academic (CA-06.1).
+
+  CognitoStackName:
+    Type: String
+    Default: donaciones-cognito
+    Description: Stack desplegado con cognito-authorizer.yaml; de sus exportaciones salen el emisor y el client_id.
+
+  DevOrigin:
+    Type: String
+    Default: http://localhost:5173
+    Description: Origen del servidor de desarrollo de la SPA, permitido por CORS.
+
+  SpaOrigin:
+    Type: String
+    Default: http://localhost:4173
+    Description: Origen de la SPA publicada, permitido por CORS. La URL de CloudFront desde el dia 5; por ahora, vite preview.
+
+  ThrottlingRateLimit:
+    Type: Number
+    Default: 10
+    MinValue: 1
+    Description: Solicitudes por segundo sostenidas en cada ruta.
+
+  ThrottlingBurstLimit:
+    Type: Number
+    Default: 20
+    MinValue: 10
+    Description: Rafaga maxima en cada ruta. Al menos 10 para la prueba de concurrencia T08.
+
+Conditions:
+  IsAcademic: !Equals [!Ref Stage, academic]
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures:
+      - arm64
+    Handler: index.handler
+    MemorySize: 256
+    Timeout: 10
+    LoggingConfig:
+      LogFormat: JSON
+    Environment:
+      Variables:
+        STAGE: !Ref Stage
+        NODE_OPTIONS: --enable-source-maps
+
+Resources:
+  # ============================================================================
+  # API HTTP con JWT authorizer de Cognito, CORS y throttling
+  # ============================================================================
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Stage
+      CorsConfiguration:
+        AllowOrigins:
+          - !Ref DevOrigin
+          - !Ref SpaOrigin
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - authorization
+          - content-type
+          - idempotency-key
+        MaxAge: 600
+      DefaultRouteSettings:
+        ThrottlingRateLimit: !Ref ThrottlingRateLimit
+        ThrottlingBurstLimit: !Ref ThrottlingBurstLimit
+      Auth:
+        DefaultAuthorizer: CognitoJwt
+        Authorizers:
+          CognitoJwt:
+            IdentitySource: $request.header.Authorization
+            JwtConfiguration:
+              issuer:
+                Fn::ImportValue: !Sub ${CognitoStackName}-CognitoIssuerUrl
+              audience:
+                - Fn::ImportValue: !Sub ${CognitoStackName}-UserPoolClientId
+
+  # ============================================================================
+  # Tablas DynamoDB. Claves genericas (pk, gsi1pk, gsi1sk): el modulo de backend
+  # decide que guarda en cada una. Nombres generados por CloudFormation para que
+  # cada integrante pueda tener su propio stack.
+  # ============================================================================
+  ProjectsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: gsi1pk
+          AttributeType: S
+        - AttributeName: gsi1sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: gsi1
+          KeySchema:
+            - AttributeName: gsi1pk
+              KeyType: HASH
+            - AttributeName: gsi1sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  DonationsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: gsi1pk
+          AttributeType: S
+        - AttributeName: gsi1sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: gsi1
+          KeySchema:
+            - AttributeName: gsi1pk
+              KeyType: HASH
+            - AttributeName: gsi1sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  IdempotencyTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+
+  AuditEventsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: gsi1pk
+          AttributeType: S
+        - AttributeName: gsi1sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: gsi1
+          KeySchema:
+            - AttributeName: gsi1pk
+              KeyType: HASH
+            - AttributeName: gsi1sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  # ============================================================================
+  # Funciones: una por ruta de la matriz de control de acceso (docs/threat-model.md).
+  # Cada una escribe en su propio grupo de logs con retencion de 14 dias, para que
+  # sam delete no deje grupos huerfanos.
+  # El codigo sale de npm run build: api/dist/<funcion>/index.mjs.
+  # ============================================================================
+  HealthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: GET /v1/health
+      CodeUri: ../api/dist/health
+      LoggingConfig:
+        LogGroup: !Ref HealthLogGroup
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /v1/health
+            Auth:
+              Authorizer: NONE
+
+  HealthLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /donaciones/${AWS::StackName}/health
+      RetentionInDays: 14
+
+  ListProjectsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: GET /v1/projects (HU-01)
+      CodeUri: ../api/dist/listProjects
+      LoggingConfig:
+        LogGroup: !Ref ListProjectsLogGroup
+      Environment:
+        Variables:
+          PROJECTS_TABLE: !Ref ProjectsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /v1/projects
+            Auth:
+              Authorizer: NONE
+
+  ListProjectsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /donaciones/${AWS::StackName}/listProjects
+      RetentionInDays: 14
+
+  GetProjectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: GET /v1/projects/{id} (HU-02)
+      CodeUri: ../api/dist/getProject
+      LoggingConfig:
+        LogGroup: !Ref GetProjectLogGroup
+      Environment:
+        Variables:
+          PROJECTS_TABLE: !Ref ProjectsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /v1/projects/{id}
+            Auth:
+              Authorizer: NONE
+
+  GetProjectLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /donaciones/${AWS::StackName}/getProject
+      RetentionInDays: 14
+
+  GetStatsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: GET /v1/stats (HU-09)
+      CodeUri: ../api/dist/getStats
+      LoggingConfig:
+        LogGroup: !Ref GetStatsLogGroup
+      Environment:
+        Variables:
+          PROJECTS_TABLE: !Ref ProjectsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /v1/stats
+            Auth:
+              Authorizer: NONE
+
+  GetStatsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /donaciones/${AWS::StackName}/getStats
+      RetentionInDays: 14
+
+  CreateProjectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: POST /v1/projects (HU-08)
+      CodeUri: ../api/dist/createProject
+      LoggingConfig:
+        LogGroup: !Ref CreateProjectLogGroup
+      Environment:
+        Variables:
+          PROJECTS_TABLE: !Ref ProjectsTable
+          AUDIT_TABLE: !Ref AuditEventsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /v1/projects
+            Auth:
+              Authorizer: CognitoJwt
+              AuthorizationScopes:
+                - api/projects.write
+
+  CreateProjectLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /donaciones/${AWS::StackName}/createProject
+      RetentionInDays: 14
+
+  PublishProjectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: POST /v1/projects/{id}/publish (HU-08)
+      CodeUri: ../api/dist/publishProject
+      LoggingConfig:
+        LogGroup: !Ref PublishProjectLogGroup
+      Environment:
+        Variables:
+          PROJECTS_TABLE: !Ref ProjectsTable
+          AUDIT_TABLE: !Ref AuditEventsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /v1/projects/{id}/publish
+            Auth:
+              Authorizer: CognitoJwt
+              AuthorizationScopes:
+                - api/projects.write
+
+  PublishProjectLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /donaciones/${AWS::StackName}/publishProject
+      RetentionInDays: 14
+
+  CreateDonationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: POST /v1/donations (HU-05)
+      CodeUri: ../api/dist/createDonation
+      LoggingConfig:
+        LogGroup: !Ref CreateDonationLogGroup
+      Environment:
+        Variables:
+          PROJECTS_TABLE: !Ref ProjectsTable
+          DONATIONS_TABLE: !Ref DonationsTable
+          IDEMPOTENCY_TABLE: !Ref IdempotencyTable
+          AUDIT_TABLE: !Ref AuditEventsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /v1/donations
+            Auth:
+              Authorizer: CognitoJwt
+              AuthorizationScopes:
+                - api/donations.*
+
+  CreateDonationLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /donaciones/${AWS::StackName}/createDonation
+      RetentionInDays: 14
+
+  # Solo existe en el stage academic (CA-06.1): la condicion quita la funcion y su ruta.
+  SimulateDonationFunction:
+    Type: AWS::Serverless::Function
+    Condition: IsAcademic
+    Properties:
+      Description: POST /v1/donations/{id}/simulate (HU-06), solo en el stage academic
+      CodeUri: ../api/dist/simulateDonation
+      LoggingConfig:
+        LogGroup: !Ref SimulateDonationLogGroup
+      Environment:
+        Variables:
+          PROJECTS_TABLE: !Ref ProjectsTable
+          DONATIONS_TABLE: !Ref DonationsTable
+          AUDIT_TABLE: !Ref AuditEventsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /v1/donations/{id}/simulate
+            Auth:
+              Authorizer: CognitoJwt
+              AuthorizationScopes:
+                - api/donations.*
+
+  SimulateDonationLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: IsAcademic
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /donaciones/${AWS::StackName}/simulateDonation
+      RetentionInDays: 14
+
+  ListMyDonationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: GET /v1/donations/me (HU-07)
+      CodeUri: ../api/dist/listMyDonations
+      LoggingConfig:
+        LogGroup: !Ref ListMyDonationsLogGroup
+      Environment:
+        Variables:
+          DONATIONS_TABLE: !Ref DonationsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /v1/donations/me
+            Auth:
+              Authorizer: CognitoJwt
+              AuthorizationScopes:
+                - api/donations.*
+
+  ListMyDonationsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /donaciones/${AWS::StackName}/listMyDonations
+      RetentionInDays: 14
+
+Outputs:
+  ApiUrl:
+    Description: URL base del API, incluido el stage
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
+
+  ProjectsTableName:
+    Value: !Ref ProjectsTable
+
+  DonationsTableName:
+    Value: !Ref DonationsTable
+
+  IdempotencyTableName:
+    Value: !Ref IdempotencyTable
+
+  AuditEventsTableName:
+    Value: !Ref AuditEventsTable
