@@ -1,0 +1,99 @@
+@import "tailwindcss";
+
+/* Paleta con contraste AA: ink, muted y brand superan 4.5:1 sobre canvas y surface. */
+@theme {
+  --color-canvas: #f7f5f0;
+  --color-surface: #ffffff;
+  --color-ink: #1c2b2d;
+  --color-muted: #4f5f60;
+  --color-line: #d5d2c8;
+  --color-brand: #0f5c56;
+  --color-brand-strong: #0b4641;
+  --color-danger: #8f1d1d;
+  --color-danger-soft: #fdecea;
+  --color-focus: #b3400f;
+}
+
+@layer base {
+  html {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+  }
+
+  /* WCAG 2.4.7 y 2.4.13: indicador de foco visible en toda la aplicación. */
+  :focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      scroll-behavior: auto !important;
+      transition: none !important;
+    }
+  }
+}
+
+@layer components {
+  /* WCAG 2.5.8: los controles superan el mínimo de 24 px. */
+  .btn {
+    display: inline-flex;
+    min-height: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
+  }
+
+  .btn-primary {
+    background-color: var(--color-brand);
+    color: #ffffff;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--color-brand-strong);
+  }
+
+  .btn-secondary {
+    border: 1px solid var(--color-brand);
+    background-color: var(--color-surface);
+    color: var(--color-brand);
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background-color: var(--color-canvas);
+  }
+
+  .skip-link {
+    position: absolute;
+    top: 0.5rem;
+    left: 0.5rem;
+    z-index: 10;
+    transform: translateY(-200%);
+    border-radius: 0.5rem;
+    background-color: var(--color-surface);
+    padding: 0.5rem 1rem;
+    font-weight: 600;
+    color: var(--color-brand);
+  }
+
+  .skip-link:focus {
+    transform: translateY(0);
+  }
+
+  .text-link {
+    color: var(--color-brand);
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+}
