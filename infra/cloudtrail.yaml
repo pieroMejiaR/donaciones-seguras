@@ -1,0 +1,113 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Plataforma de Donaciones Seguras: CloudTrail de la cuenta (RNF-HU-07).
+  Un trail de eventos de administracion con validacion de integridad y un bucket S3 privado.
+  Se despliega una sola vez, como donaciones-cognito: un trail es de la cuenta, no de cada stack.
+  Responsable: Piero Mejia (lider tecnico y DevOps).
+
+Parameters:
+  TrailName:
+    Type: String
+    Default: donaciones-trail
+    Description: Nombre del trail. Solo se usa en este stack, y el bucket lo necesita para limitar quien puede escribir.
+
+  RetentionDays:
+    Type: Number
+    Default: 30
+    MinValue: 7
+    Description: Dias que se conservan los archivos de log en el bucket antes de borrarse solos.
+
+Resources:
+  # ============================================================================
+  # Bucket de logs: privado, cifrado, solo HTTPS y con vencimiento. El nombre lo
+  # genera CloudFormation (los nombres de S3 son globales).
+  # ============================================================================
+  TrailBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: vencer-logs
+            Status: Enabled
+            ExpirationInDays: !Ref RetentionDays
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+
+  # Solo CloudTrail, y solo este trail, puede escribir. Todo lo demas, por HTTPS.
+  TrailBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref TrailBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: CloudTrailLeeElAcl
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:GetBucketAcl
+            Resource: !GetAtt TrailBucket.Arn
+            Condition:
+              StringEquals:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/${TrailName}
+          - Sid: CloudTrailEscribeLogs
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub ${TrailBucket.Arn}/AWSLogs/${AWS::AccountId}/*
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: bucket-owner-full-control
+                aws:SourceArn: !Sub arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/${TrailName}
+          - Sid: SoloHttps
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt TrailBucket.Arn
+              - !Sub ${TrailBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  # ============================================================================
+  # Trail: eventos de administracion (lectura y escritura) de todas las regiones,
+  # con eventos de servicios globales como IAM. Los archivos llevan firma para
+  # detectar si alguien los altera. No registra eventos de datos, que se cobran.
+  # ============================================================================
+  Trail:
+    Type: AWS::CloudTrail::Trail
+    DependsOn: TrailBucketPolicy
+    Properties:
+      TrailName: !Ref TrailName
+      S3BucketName: !Ref TrailBucket
+      IsLogging: true
+      IsMultiRegionTrail: true
+      IncludeGlobalServiceEvents: true
+      EnableLogFileValidation: true
+      EventSelectors:
+        - ReadWriteType: All
+          IncludeManagementEvents: true
+
+Outputs:
+  TrailName:
+    Value: !Ref Trail
+
+  TrailBucketName:
+    Description: Bucket con los archivos de log. Hay que vaciarlo antes de sam delete.
+    Value: !Ref TrailBucket
