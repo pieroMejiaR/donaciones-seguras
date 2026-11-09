@@ -1,0 +1,184 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Plataforma de Donaciones Seguras - Modulo de Identidad y Seguridad Zero Trust (Cognito + JWT Authorizer)
+  Responsable: Paolo Ramirez (Identidad y Seguridad Zero Trust)
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - academic
+      - prod
+    Description: Entorno de despliegue
+
+  CallbackUrls:
+    Type: CommaDelimitedList
+    Default: "http://localhost:5173,http://localhost:5173/callback"
+    Description: URLs de callback permitidas para la SPA
+
+  LogoutUrls:
+    Type: CommaDelimitedList
+    Default: "http://localhost:5173,http://localhost:5173/logout"
+    Description: URLs de redireccion tras logout
+
+Resources:
+  # ============================================================================
+  # 1. AWS Cognito User Pool
+  # ============================================================================
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "donaciones-user-pool-${Environment}"
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          TemporaryPasswordValidityDays: 7
+      MfaConfiguration: "OPTIONAL"
+      EnabledMfas:
+        - "SOFTWARE_TOKEN_MFA"
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+
+  # ============================================================================
+  # 2. Resource Server con Scopes personalizados
+  # ============================================================================
+  UserPoolResourceServer:
+    Type: AWS::Cognito::UserPoolResourceServer
+    Properties:
+      UserPoolId: !Ref UserPool
+      Identifier: "api"
+      Name: "Plataforma Donaciones API"
+      Scopes:
+        - ScopeName: "projects.write"
+          ScopeDescription: "Crear y publicar proyectos de recaudacion (HU-08)"
+        - ScopeName: "donations.*"
+          ScopeDescription: "Operaciones de donaciones: crear intencion, historial y simular (HU-05, HU-06, HU-07)"
+        - ScopeName: "audit.read"
+          ScopeDescription: "Lectura de eventos de auditoria para AUDITOR (HU-10)"
+
+  # ============================================================================
+  # 3. User Pool App Client para SPA (Public Client con PKCE, sin secretos)
+  # ============================================================================
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn: UserPoolResourceServer
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: !Sub "donaciones-spa-client-${Environment}"
+      GenerateSecret: false # Public client (SPA en navegador)
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      AllowedOAuthFlows:
+        - code # Authorization Code Grant con PKCE obligatorio
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+        - "api/projects.write"
+        - "api/donations.*"
+        - "api/audit.read"
+      CallbackURLs: !Ref CallbackUrls
+      LogoutURLs: !Ref LogoutUrls
+      # Limitacion de tiempo de vida del Access Token (HU-03 / RNF-HU-02: 15 minutos o menos)
+      AccessTokenValidity: 15
+      IdTokenValidity: 60
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+
+  # ============================================================================
+  # 4. Cognito User Pool Groups (RBAC)
+  # ============================================================================
+  DonanteGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      UserPoolId: !Ref UserPool
+      GroupName: "DONANTE"
+      Description: "Rol Donante: registrar intenciones de donacion, historial propio y simulacion"
+      Precedence: 3
+
+  GestorGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      UserPoolId: !Ref UserPool
+      GroupName: "GESTOR"
+      Description: "Rol Gestor: crear borradores y publicar proyectos de recaudacion"
+      Precedence: 2
+
+  AuditorGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      UserPoolId: !Ref UserPool
+      GroupName: "AUDITOR"
+      Description: "Rol Auditor: lectura de auditoria seudonimizada con MFA obligatorio"
+      Precedence: 1
+
+  # ============================================================================
+  # 5. Definicion de Authorizer JWT para API Gateway HTTP API
+  # ============================================================================
+  # En SAM / CloudFormation este bloque se vincula al recurso AWS::Serverless::HttpApi
+  # o se instancia directamente como AWS::ApiGatewayV2::Authorizer:
+  #
+  # HttpApiJwtAuthorizer:
+  #   Type: AWS::ApiGatewayV2::Authorizer
+  #   Properties:
+  #     ApiId: !Ref HttpApi
+  #     AuthorizerType: JWT
+  #     Name: CognitoJwtAuthorizer
+  #     IdentitySource:
+  #       - "$request.header.Authorization"
+  #     JwtConfiguration:
+  #       Issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+  #       Audience:
+  #         - !Ref UserPoolClient
+
+Outputs:
+  UserPoolId:
+    Description: ID del Cognito User Pool
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolId"
+
+  UserPoolArn:
+    Description: ARN del Cognito User Pool
+    Value: !GetAtt UserPool.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolArn"
+
+  UserPoolClientId:
+    Description: ID del App Client publico (sin secreto) para la SPA
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolClientId"
+
+  CognitoIssuerUrl:
+    Description: URL del emisor (Issuer) para el JWT Authorizer y OIDC
+    Value: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+    Export:
+      Name: !Sub "${AWS::StackName}-CognitoIssuerUrl"

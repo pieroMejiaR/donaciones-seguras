@@ -5,3 +5,4 @@ Cada integrante anota aquí cada uso de IA en código, pruebas o documentación.
 | Fecha | Integrante | Herramienta | Para qué | Archivos | Qué se revisó o cambió a mano |
 | --- | --- | --- | --- | --- | --- |
 | 2026-11-08 | Piero Mejía | Claude Code | Esqueleto del monorepo, workflow de CI y documentación base | `package.json`, `web/`, `api/`, `.github/`, `README.md` | Revisión de la estructura y del workflow |
+| 2026-11-08 | Paolo Ramírez | Antigravity | Modelo de amenazas STRIDE, diseño de scopes, infraestructura Cognito SAM, módulos authorizer/authz (RBAC y ownership), pruebas T02, T11 y T03 y evidencias | `docs/threat-model.md`, `infra/cognito-authorizer.yaml`, `api/src/auth/`, `evidence/T02/`, `evidence/T11/`, `evidence/T03/` | Validación de claims de Cognito, rechazo estricto de ID tokens, estructura de errores uniforme y sanitización de evidencia |
