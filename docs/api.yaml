@@ -13,8 +13,8 @@ info:
     - API Gateway valida firma, emisor, audiencia, expiración y scope; Lambda vuelve a validar
       scope, rol (`cognito:groups`) y propietario del recurso.
 
-    Estado de implementación: `projects` y `stats` implementados; `donations` responde 501
-    hasta el día 4; `audit` es la extensión HU-10.
+    Estado de implementación: `projects`, `stats` y `POST /v1/donations` implementados;
+    `simulate` y `donations/me` responden 501 hasta el día 5; `audit` es la extensión HU-10.
   contact:
     name: Santiago Callocondo (backend)
 servers:
@@ -172,14 +172,18 @@ paths:
     post:
       tags: [donations]
       operationId: createDonation
-      summary: Registrar una intención de donación simulada (HU-05) — día 4
+      summary: Registrar una intención de donación simulada (HU-05)
       description: |
         Solo rol DONANTE. `donorSub` sale del token, nunca del cuerpo (CA-05.3); el cuerpo es
-        estricto y rechaza `donorSub`, `donorId` o datos de pago (CA-05.5).
+        estricto y rechaza `donorSub`, `donorId` o datos de pago (CA-05.5). No modifica el
+        acumulado del proyecto: eso ocurre al confirmar la simulación (CA-05.2).
 
-        Idempotencia (CA-05.4): la misma `Idempotency-Key` con el mismo cuerpo devuelve el mismo
-        201 y la misma donación, con la cabecera `Idempotent-Replayed: true`. La misma clave con
-        otro cuerpo responde 409 `IDEMPOTENCY_KEY_REUSED`. La clave es por usuario y caduca en 24 h.
+        Idempotencia (CA-05.4): la misma `Idempotency-Key` con el mismo cuerpo devuelve
+        exactamente la respuesta 201 original, con la cabecera `Idempotent-Replayed: true`. La
+        misma clave con otro cuerpo responde 409 `IDEMPOTENCY_KEY_REUSED`. Si llega mientras la
+        primera solicitud aún se escribe, responde 409 `IDEMPOTENCY_KEY_IN_PROGRESS` y se puede
+        reintentar. Sin clave válida responde 400 `INVALID_IDEMPOTENCY_KEY`. La clave es por
+        usuario y caduca en 24 h; la SPA debe generar una nueva por cada intento de donación.
 
         Un proyecto inexistente o en BORRADOR responde 409 `PROJECT_NOT_ELIGIBLE` (CA-05.2, CA-08.2).
       security:
@@ -493,7 +497,7 @@ components:
 
   responses:
     BadRequest:
-      description: "Entrada inválida: VALIDATION_ERROR, INVALID_JSON"
+      description: "Entrada inválida: VALIDATION_ERROR, INVALID_JSON, INVALID_IDEMPOTENCY_KEY"
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -517,7 +521,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Conflict:
-      description: "PROJECT_ALREADY_PUBLISHED, PROJECT_NOT_ELIGIBLE, IDEMPOTENCY_KEY_REUSED, DONATION_ALREADY_FINALIZED"
+      description: "PROJECT_ALREADY_PUBLISHED, PROJECT_NOT_ELIGIBLE, IDEMPOTENCY_KEY_REUSED, IDEMPOTENCY_KEY_IN_PROGRESS, DONATION_ALREADY_FINALIZED"
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

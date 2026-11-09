@@ -35,10 +35,13 @@ Las cuatro tablas usan claves genéricas (`pk`, `gsi1pk`, `gsi1sk`). Este docume
 | Atributo | Valor |
 | --- | --- |
 | `pk` | `IDEMP#<donorSub>#<idempotencyKey>` |
-| Datos | `payloadHash` (SHA-256 del cuerpo canónico), `donationId`, `expiresAt` (epoch en segundos, TTL de 24 h) |
+| Datos | `payloadHash` (SHA-256 del cuerpo validado, con los campos en orden fijo), `donationId`, `response` (la respuesta 201 original), `expiresAt` (epoch en segundos, TTL de 24 h) |
 
 - La clave incluye el `sub`, así que dos donantes no pueden chocar con la misma clave.
-- La donación y su registro de idempotencia se escriben en un único `TransactWriteItems` con `attribute_not_exists(pk)`. Si la transacción falla por esa condición, se lee el registro: con el mismo `payloadHash` se devuelve la donación original, y con otro hash se responde 409 (CA-05.4).
+- Antes de escribir se lee el registro. Con el mismo `payloadHash` se devuelve `response` tal cual, con la cabecera `Idempotent-Replayed: true`. Con otro hash se responde 409 `IDEMPOTENCY_KEY_REUSED` (CA-05.4).
+- Si no existe, se escriben en un único `TransactWriteItems` la donación, el registro, un `ConditionCheck` de que el proyecto sigue `PUBLICADO` y el evento de auditoría. El registro va condicionado a `attribute_not_exists(pk) OR expiresAt <= :now`.
+- Si dos solicitudes con la misma clave llegan a la vez, solo una se escribe. La otra vuelve a leer el registro y responde como repetición, o con 409 `IDEMPOTENCY_KEY_IN_PROGRESS` si la ganadora aún no se confirmó.
+- El TTL de DynamoDB borra con retraso: un registro con `expiresAt` vencido se trata como inexistente.
 
 ## AuditEvents
 
@@ -64,10 +67,9 @@ Esta tabla sirve de insumo para los roles de mínimo privilegio (RNF-HU-03, T10)
 | `createProject` | Projects, AuditEvents | `PutItem` |
 | `publishProject` | Projects | `GetItem`, `UpdateItem` |
 | | AuditEvents | `PutItem` |
-| `createDonation` (día 4) | Projects | `GetItem` |
-| | Donations, Idempotency, AuditEvents | `PutItem` |
-| | Idempotency | `GetItem` |
-| | Donations | `GetItem` |
+| `createDonation` | Projects | `GetItem`, `ConditionCheckItem` |
+| | Idempotency | `GetItem`, `PutItem` |
+| | Donations, AuditEvents | `PutItem` |
 | `simulateDonation` (día 5) | Donations, Projects | `GetItem`, `UpdateItem` |
 | | AuditEvents | `PutItem` |
 | `listMyDonations` (día 5) | Donations, índice `gsi1` | `Query` |
