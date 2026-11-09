@@ -29,6 +29,7 @@ npm run typecheck    # TypeScript en web y api
 npm test             # Vitest en web y api
 npm run build        # build de web y api; en api empaqueta cada función en api/dist/<función>
 npm run dev -w web   # servidor de desarrollo de la SPA
+node scripts/rendimiento.mjs --stack donaciones-<nombre>   # rendimiento del catálogo (RNF-HU-05); escribe datos de prueba en ese stack
 ```
 
 ## Frontend
