@@ -1,0 +1,530 @@
+openapi: 3.1.0
+info:
+  title: Plataforma de Donaciones Seguras API
+  version: 0.1.0
+  summary: Contrato del API para la SPA y las pruebas T01 a T10.
+  description: |
+    Prototipo académico: las donaciones son simuladas y no se procesa ningún pago.
+
+    - Montos siempre en céntimos enteros de PEN (`150` = S/ 1,50).
+    - Fechas en ISO 8601 UTC.
+    - Todo error responde `{ code, message, requestId }` (RNF-HU-10).
+    - Las rutas protegidas exigen un **access token** de Cognito. Un ID token responde 401 (CA-NF02.1).
+    - API Gateway valida firma, emisor, audiencia, expiración y scope; Lambda vuelve a validar
+      scope, rol (`cognito:groups`) y propietario del recurso.
+
+    Estado de implementación: `projects` y `stats` implementados; `donations` responde 501
+    hasta el día 4; `audit` es la extensión HU-10.
+  contact:
+    name: Santiago Callocondo (backend)
+servers:
+  - url: https://{apiId}.execute-api.us-east-2.amazonaws.com/{stage}
+    variables:
+      apiId:
+        default: replace-me
+        description: Salida ApiUrl del stack
+      stage:
+        default: academic
+        enum: [academic, dev]
+        description: "/v1/donations/{id}/simulate solo existe en academic (CA-06.1)"
+
+tags:
+  - name: projects
+    description: Catálogo, detalle, indicadores y gestión de proyectos (HU-01, HU-02, HU-08, HU-09)
+  - name: donations
+    description: Intenciones de donación simuladas, simulación e historial (HU-05, HU-06, HU-07)
+  - name: audit
+    description: Consulta de auditoría para AUDITOR (HU-10, extensión)
+  - name: health
+    description: Prueba de vida del despliegue
+
+paths:
+  /v1/health:
+    get:
+      tags: [health]
+      operationId: getHealth
+      summary: Prueba de vida del stack
+      security: []
+      responses:
+        "200":
+          description: El stack responde
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, const: ok }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /v1/projects:
+    get:
+      tags: [projects]
+      operationId: listProjects
+      summary: Catálogo público de proyectos PUBLICADO (HU-01, T01)
+      description: |
+        Nunca incluye proyectos BORRADOR (CA-01.2). Sin proyectos publicados responde 200 con
+        `items: []` (CA-01.3). Orden: publicados más recientes primero.
+      security: []
+      responses:
+        "200":
+          description: Proyectos publicados
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Project" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    post:
+      tags: [projects]
+      operationId: createProject
+      summary: Crear un proyecto en BORRADOR (HU-08, CA-08.1)
+      description: |
+        Solo rol GESTOR. El cuerpo es estricto: cualquier campo extra (`status`,
+        `confirmedAmountCents`, `role`, …) responde 400. Cada intento, exitoso o no, queda en
+        auditoría (CA-08.3).
+      security:
+        - cognito: [api/projects.write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateProjectRequest" }
+      responses:
+        "201":
+          description: Proyecto creado en BORRADOR
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/projects/{id}:
+    get:
+      tags: [projects]
+      operationId: getProject
+      summary: Detalle público de un proyecto (HU-02)
+      description: |
+        Un id inexistente, mal formado o de un BORRADOR responde el mismo 404 (CA-02.2).
+        No incluye datos de donantes (CA-02.1).
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Proyecto publicado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/projects/{id}/publish:
+    post:
+      tags: [projects]
+      operationId: publishProject
+      summary: Publicar un BORRADOR (HU-08, CA-08.2)
+      description: |
+        Solo rol GESTOR. Si el proyecto ya está PUBLICADO, o si otro gestor lo publica a la vez,
+        responde 409. No lleva cuerpo.
+      security:
+        - cognito: [api/projects.write]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Proyecto publicado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/stats:
+    get:
+      tags: [projects]
+      operationId: getStats
+      summary: Indicadores agregados públicos (HU-09)
+      description: |
+        Suma de metas y de montos confirmados de los proyectos PUBLICADO. Excluye donaciones
+        pendientes y rechazadas (CA-09.1) y no expone donantes ni registros individuales (CA-09.2).
+      security: []
+      responses:
+        "200":
+          description: Agregados
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Stats" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/donations:
+    post:
+      tags: [donations]
+      operationId: createDonation
+      summary: Registrar una intención de donación simulada (HU-05) — día 4
+      description: |
+        Solo rol DONANTE. `donorSub` sale del token, nunca del cuerpo (CA-05.3); el cuerpo es
+        estricto y rechaza `donorSub`, `donorId` o datos de pago (CA-05.5).
+
+        Idempotencia (CA-05.4): la misma `Idempotency-Key` con el mismo cuerpo devuelve el mismo
+        201 y la misma donación, con la cabecera `Idempotent-Replayed: true`. La misma clave con
+        otro cuerpo responde 409 `IDEMPOTENCY_KEY_REUSED`. La clave es por usuario y caduca en 24 h.
+
+        Un proyecto inexistente o en BORRADOR responde 409 `PROJECT_NOT_ELIGIBLE` (CA-05.2, CA-08.2).
+      security:
+        - cognito: [api/donations.*]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateDonationRequest" }
+      responses:
+        "201":
+          description: Donación registrada en PENDIENTE_SIMULACION, o repetición idempotente
+          headers:
+            Idempotent-Replayed:
+              description: "`true` cuando la respuesta es la repetición de una solicitud anterior"
+              schema: { type: string, enum: ["true"] }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Donation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/donations/{id}/simulate:
+    post:
+      tags: [donations]
+      operationId: simulateDonation
+      summary: Simular la confirmación o el rechazo de una donación propia (HU-06) — día 5
+      description: |
+        Solo existe en el stage `academic` (CA-06.1). Pasa una donación propia de
+        PENDIENTE_SIMULACION a un estado terminal. Solo la primera transición cambia el acumulado
+        del proyecto; las siguientes responden 409 `DONATION_ALREADY_FINALIZED` (CA-06.2, T08).
+        Una donación ajena o inexistente responde 404 (CA-07.2). La SPA debe mostrar
+        «Simulación académica: no se ha realizado ningún cobro» (CA-06.4).
+      security:
+        - cognito: [api/donations.*]
+      parameters:
+        - $ref: "#/components/parameters/DonationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SimulateDonationRequest" }
+      responses:
+        "200":
+          description: Donación en su estado terminal
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Donation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/donations/me:
+    get:
+      tags: [donations]
+      operationId: listMyDonations
+      summary: Historial propio (HU-07) — día 5
+      description: |
+        Solo las donaciones del `sub` del token (CA-07.1); no acepta parámetros de identidad.
+        Más recientes primero.
+      security:
+        - cognito: [api/donations.*]
+      responses:
+        "200":
+          description: Donaciones del usuario autenticado
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Donation" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/audit:
+    get:
+      tags: [audit]
+      operationId: listAuditEvents
+      summary: Eventos de auditoría (HU-10, extensión)
+      description: Solo rol AUDITOR con MFA (HU-11). Filtros por tipo y rango de fechas (CA-10.1).
+      security:
+        - cognito: [api/audit.read]
+      parameters:
+        - name: type
+          in: query
+          schema: { $ref: "#/components/schemas/AuditAction" }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Eventos que cumplen los filtros, más recientes primero
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/AuditEvent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+components:
+  securitySchemes:
+    cognito:
+      type: oauth2
+      description: |
+        Cognito User Pool (`infra/cognito-authorizer.yaml`). Authorization Code + PKCE desde la
+        SPA; el access token dura 15 minutos. Se envía como `Authorization: Bearer <access_token>`.
+      flows:
+        authorizationCode:
+          authorizationUrl: https://replace-me.auth.us-east-2.amazoncognito.com/oauth2/authorize
+          tokenUrl: https://replace-me.auth.us-east-2.amazoncognito.com/oauth2/token
+          scopes:
+            api/projects.write: Crear y publicar proyectos (GESTOR)
+            api/donations.*: Donar, simular y ver historial propio (DONANTE)
+            api/audit.read: Leer auditoría (AUDITOR)
+
+  parameters:
+    ProjectId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DonationId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Un UUID v4 generado por la SPA para cada intento de donación.
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9_-]{16,128}$"
+
+  schemas:
+    Cents:
+      type: integer
+      description: Céntimos de PEN
+      minimum: 0
+
+    ProjectStatus:
+      type: string
+      enum: [BORRADOR, PUBLICADO]
+
+    Project:
+      type: object
+      required:
+        - projectId
+        - title
+        - description
+        - goalAmountCents
+        - confirmedAmountCents
+        - currency
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        projectId: { type: string, format: uuid }
+        title: { type: string, minLength: 3, maxLength: 120 }
+        description: { type: string, minLength: 10, maxLength: 2000 }
+        goalAmountCents: { $ref: "#/components/schemas/Cents" }
+        confirmedAmountCents:
+          $ref: "#/components/schemas/Cents"
+          description: Suma de donaciones CONFIRMADA_SIMULADA
+        currency: { type: string, const: PEN }
+        status: { $ref: "#/components/schemas/ProjectStatus" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        publishedAt:
+          type: string
+          format: date-time
+          description: Solo en proyectos PUBLICADO
+      examples:
+        - projectId: 6f1c2b8e-3a4d-4e5f-9a0b-1c2d3e4f5a6b
+          title: Comedor comunitario Puentes
+          description: Raciones diarias para 40 familias del escenario de prueba
+          goalAmountCents: 1500000
+          confirmedAmountCents: 12500
+          currency: PEN
+          status: PUBLICADO
+          createdAt: "2026-11-08T09:00:00.000Z"
+          updatedAt: "2026-11-08T10:00:00.000Z"
+          publishedAt: "2026-11-08T10:00:00.000Z"
+
+    CreateProjectRequest:
+      type: object
+      additionalProperties: false
+      required: [title, description, goalAmountCents]
+      properties:
+        title:
+          type: string
+          minLength: 3
+          maxLength: 120
+          description: Se recortan los espacios de los extremos antes de validar
+        description: { type: string, minLength: 10, maxLength: 2000 }
+        goalAmountCents:
+          type: integer
+          minimum: 1
+          maximum: 100000000
+          description: Meta en céntimos; tope S/ 1 000 000,00
+
+    Stats:
+      type: object
+      required: [currency, publishedProjects, goalAmountCents, confirmedAmountCents]
+      properties:
+        currency: { type: string, const: PEN }
+        publishedProjects: { type: integer, minimum: 0 }
+        goalAmountCents: { $ref: "#/components/schemas/Cents" }
+        confirmedAmountCents: { $ref: "#/components/schemas/Cents" }
+
+    DonationStatus:
+      type: string
+      enum: [PENDIENTE_SIMULACION, CONFIRMADA_SIMULADA, RECHAZADA_SIMULADA]
+
+    Donation:
+      type: object
+      description: No incluye donorSub; el historial ya está limitado al usuario del token.
+      required:
+        - donationId
+        - projectId
+        - projectTitle
+        - amountCents
+        - currency
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        donationId: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        projectTitle:
+          type: string
+          description: Título del proyecto al momento de donar, para el historial (CA-07.1)
+        amountCents: { type: integer, minimum: 100, maximum: 100000 }
+        currency: { type: string, const: PEN }
+        status: { $ref: "#/components/schemas/DonationStatus" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    CreateDonationRequest:
+      type: object
+      additionalProperties: false
+      required: [projectId, amountCents]
+      properties:
+        projectId: { type: string, format: uuid }
+        amountCents:
+          type: integer
+          minimum: 100
+          maximum: 100000
+          description: S/ 1,00 a S/ 1 000,00 (CA-05.1)
+
+    SimulateDonationRequest:
+      type: object
+      additionalProperties: false
+      required: [outcome]
+      properties:
+        outcome:
+          type: string
+          enum: [CONFIRMADA_SIMULADA, RECHAZADA_SIMULADA]
+
+    AuditAction:
+      type: string
+      enum: [PROJECT_CREATE, PROJECT_PUBLISH, DONATION_CREATE, DONATION_SIMULATE]
+
+    AuditEvent:
+      type: object
+      required: [eventId, timestamp, requestId, actorRef, action, resourceRef, outcome]
+      properties:
+        eventId: { type: string, format: uuid }
+        timestamp: { type: string, format: date-time }
+        requestId: { type: string }
+        actorRef:
+          type: string
+          pattern: "^usr_[0-9a-f]{16}$"
+          description: Seudónimo del sub (SHA-256 recortado); nunca el sub ni el correo
+        action: { $ref: "#/components/schemas/AuditAction" }
+        resourceRef: { type: string, examples: ["project/6f1c2b8e-3a4d-4e5f-9a0b-1c2d3e4f5a6b"] }
+        outcome: { type: string, enum: [SUCCESS, DENIED, REJECTED, ERROR] }
+        reason:
+          type: string
+          description: Código de error cuando outcome no es SUCCESS
+
+    Error:
+      type: object
+      required: [code, message, requestId]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        requestId: { type: string }
+
+  responses:
+    BadRequest:
+      description: "Entrada inválida: VALIDATION_ERROR, INVALID_JSON"
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            code: VALIDATION_ERROR
+            message: "goalAmountCents: Demasiado pequeño: se esperaba que número fuera >0"
+            requestId: abc123
+    Unauthorized:
+      description: "Sin token válido: MISSING_TOKEN, ID_TOKEN_NOT_ALLOWED, TOKEN_EXPIRED, … API Gateway responde 401 sin cuerpo uniforme si rechaza antes de Lambda."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: "Token válido sin permiso: INSUFFICIENT_SCOPE, FORBIDDEN_ROLE. API Gateway responde 403 sin cuerpo uniforme si falta el scope."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: "PROJECT_NOT_FOUND, DONATION_NOT_FOUND"
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: "PROJECT_ALREADY_PUBLISHED, PROJECT_NOT_ELIGIBLE, IDEMPOTENCY_KEY_REUSED, DONATION_ALREADY_FINALIZED"
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: Throttling de API Gateway por ruta. Lo emite API Gateway, sin cuerpo uniforme.
+    InternalError:
+      description: INTERNAL_SERVER_ERROR, sin detalles internos
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
