@@ -1,5 +1,6 @@
 import {
   GetCommand,
+  QueryCommand,
   TransactWriteCommand,
   type DynamoDBDocumentClient,
 } from "@aws-sdk/lib-dynamodb";
@@ -171,6 +172,140 @@ export async function createDonation(
     }
     if (reasons[2]?.Code === "ConditionalCheckFailed") {
       return "project-not-eligible";
+    }
+    throw error;
+  }
+}
+
+/** Lectura consistente de una donación, con su dueño, para verificar ownership (CA-07.2). */
+export async function getDonationRecord(
+  ddb: DynamoDBDocumentClient,
+  tableName: string,
+  donationId: string,
+): Promise<DonationRecord | undefined> {
+  const result = await ddb.send(
+    new GetCommand({
+      TableName: tableName,
+      Key: { pk: donationPk(donationId) },
+      ConsistentRead: true,
+    }),
+  );
+
+  const item = result.Item;
+  if (!item) {
+    return undefined;
+  }
+
+  return {
+    ...toDonation(item),
+    donorSub: item.donorSub as string,
+    idempotencyKey: item.idempotencyKey as string,
+    payloadHash: item.payloadHash as string,
+  };
+}
+
+/**
+ * Historial de un donante, más recientes primero (HU-07, CA-07.1). La consulta usa la partición
+ * DONOR#<sub> de gsi1: no hay forma de pedir el historial de otra persona.
+ */
+export async function listDonationsByDonor(
+  ddb: DynamoDBDocumentClient,
+  tableName: string,
+  donorSub: string,
+): Promise<Donation[]> {
+  const items: Record<string, unknown>[] = [];
+  let startKey: Record<string, unknown> | undefined;
+
+  do {
+    const page = await ddb.send(
+      new QueryCommand({
+        TableName: tableName,
+        IndexName: "gsi1",
+        KeyConditionExpression: "gsi1pk = :donor",
+        ExpressionAttributeValues: { ":donor": `DONOR#${donorSub}` },
+        ScanIndexForward: false,
+        ExclusiveStartKey: startKey,
+      }),
+    );
+    items.push(...(page.Items ?? []));
+    startKey = page.LastEvaluatedKey;
+  } while (startKey);
+
+  // Defensa en profundidad: aunque la partición ya es del donante, se descarta cualquier ítem ajeno.
+  return items.filter((item) => item.donorSub === donorSub).map(toDonation);
+}
+
+export type SimulationOutcome = "applied" | "not-pending" | "contention";
+
+/**
+ * Pasa una donación de PENDIENTE_SIMULACION a un estado terminal (HU-06, RNF-HU-04), en una
+ * transacción:
+ *   0. Update de la donación, condicionado a que siga PENDIENTE_SIMULACION y sea del donante.
+ *   1. Solo si se confirma: ADD del monto al acumulado del proyecto. Una rechazada no suma (CA-06.3).
+ *   2. Put del evento de auditoría.
+ * La condición del paso 0 hace que solo la primera transición válida sume al acumulado, aunque
+ * lleguen muchas solicitudes a la vez (CA-06.2, CA-NF04.1, T08).
+ */
+export async function applySimulation(
+  ddb: DynamoDBDocumentClient,
+  tables: Pick<DonationTables, "donations" | "projects" | "audit">,
+  params: {
+    donation: DonationRecord;
+    outcome: "CONFIRMADA_SIMULADA" | "RECHAZADA_SIMULADA";
+    now: string;
+    audit: AuditEvent;
+  },
+): Promise<SimulationOutcome> {
+  const { donation, outcome, now } = params;
+
+  const transactItems: NonNullable<
+    ConstructorParameters<typeof TransactWriteCommand>[0]["TransactItems"]
+  > = [
+    {
+      Update: {
+        TableName: tables.donations,
+        Key: { pk: donationPk(donation.donationId) },
+        UpdateExpression: "SET #status = :outcome, updatedAt = :now",
+        ConditionExpression: "#status = :pending AND donorSub = :donorSub",
+        ExpressionAttributeNames: { "#status": "status" },
+        ExpressionAttributeValues: {
+          ":outcome": outcome,
+          ":pending": "PENDIENTE_SIMULACION",
+          ":donorSub": donation.donorSub,
+          ":now": now,
+        },
+      },
+    },
+  ];
+
+  if (outcome === "CONFIRMADA_SIMULADA") {
+    transactItems.push({
+      Update: {
+        TableName: tables.projects,
+        Key: { pk: projectPk(donation.projectId) },
+        UpdateExpression: "SET updatedAt = :now ADD confirmedAmountCents :amount",
+        ConditionExpression: "attribute_exists(pk)",
+        ExpressionAttributeValues: { ":amount": donation.amountCents, ":now": now },
+      },
+    });
+  }
+
+  transactItems.push({ Put: auditPut(tables.audit, params.audit) });
+
+  try {
+    await ddb.send(new TransactWriteCommand({ TransactItems: transactItems }));
+    return "applied";
+  } catch (error) {
+    const reasons = cancellationReasons(error);
+    if (!reasons) {
+      throw error;
+    }
+    if (reasons[0]?.Code === "ConditionalCheckFailed") {
+      return "not-pending";
+    }
+    // Otra transacción tocaba la misma donación o el mismo proyecto: no se aplicó nada.
+    if (reasons.some((reason) => reason.Code === "TransactionConflict")) {
+      return "contention";
     }
     throw error;
   }
