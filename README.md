@@ -114,7 +114,7 @@ cd infra
 sam deploy --config-env frontend --parameter-overrides ApiUrl=<salida ApiUrl de donaciones-academic>
 ```
 
-La salida `SiteUrl` es la URL pública. Tiene que estar en `SpaOrigin` del API (ya figura en el perfil `academic` de `samconfig.toml`) y, para el inicio de sesión, en las URL de callback y de cierre de sesión de Cognito. Mientras Cognito no tenga dominio, la CSP admite cualquier `https://*.auth.us-east-2.amazoncognito.com`; cuando exista, se pasa el exacto con `CognitoDomain=<dominio>`.
+La salida `SiteUrl` es la URL pública. Tiene que estar en `SpaOrigin` del API (ya figura en el perfil `academic` de `samconfig.toml`) y, para el inicio de sesión, en las URL de callback y de cierre de sesión de Cognito. Por ahora la CSP admite cualquier `https://*.auth.us-east-2.amazoncognito.com`; para cerrarla se pasa el dominio exacto con `CognitoDomain=<salida CognitoDomainUrl del stack de Cognito>`.
 
 Para publicar o actualizar la SPA se compila con las variables `VITE_*` de `web/.env.example` y se sube el resultado. No hace falta invalidar la caché:
 
