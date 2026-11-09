@@ -223,4 +223,42 @@ describe("Authorizer & Token Validation (Día 2)", () => {
       expect(() => validateScope(ctx, "api/donations.read")).not.toThrow();
     });
   });
+
+  describe("Claims tal como los entrega el JWT authorizer de HTTP API (strings)", () => {
+    it("interpreta cognito:groups con formato \"[GESTOR]\" como el rol GESTOR", () => {
+      const event = createMockEvent({
+        authorizerClaims: {
+          sub: "usr-gestor-apigw",
+          token_use: "access",
+          "cognito:groups": "[GESTOR]",
+          exp: String(Math.floor(Date.now() / 1000) + 900),
+        },
+        authorizerScopes: ["api/projects.write"],
+      });
+
+      const ctx = extractAuthContext(event);
+      expect(ctx.roles).toEqual(["GESTOR"]);
+      expect(ctx.scopes).toEqual(["api/projects.write"]);
+    });
+
+    it("interpreta varios grupos separados por espacio y descarta los desconocidos", () => {
+      const event = createMockEvent({
+        authorizerClaims: {
+          sub: "usr-multi-apigw",
+          token_use: "access",
+          "cognito:groups": "[DONANTE ADMIN GESTOR]",
+        },
+      });
+
+      expect(extractAuthContext(event).roles).toEqual(["DONANTE", "GESTOR"]);
+    });
+
+    it("no concede roles cuando el claim falta o está vacío", () => {
+      const event = createMockEvent({
+        authorizerClaims: { sub: "usr-sin-grupos", token_use: "access", "cognito:groups": "[]" },
+      });
+
+      expect(extractAuthContext(event).roles).toEqual([]);
+    });
+  });
 });
