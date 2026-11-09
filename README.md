@@ -31,6 +31,35 @@ npm run build        # build de web y api; en api empaqueta cada función en api
 npm run dev -w web   # servidor de desarrollo de la SPA
 ```
 
+## Frontend
+
+La SPA necesita un stack con Cognito desplegado. Copia la plantilla y completa los valores con las salidas del stack:
+
+```bash
+cp web/.env.example web/.env.local
+```
+
+| Variable | Valor |
+| --- | --- |
+| `VITE_OIDC_AUTHORITY` | Salida `CognitoIssuerUrl` |
+| `VITE_OIDC_CLIENT_ID` | Salida `UserPoolClientId` |
+| `VITE_OIDC_DOMAIN` | Dominio del managed login, por ejemplo `https://<prefijo>.auth.us-east-2.amazoncognito.com` |
+| `VITE_OIDC_SCOPE` | Scopes separados por espacios; deben estar registrados en el app client |
+| `VITE_API_BASE_URL` | URL del API |
+
+Estas variables quedan públicas en el bundle, así que nunca deben contener secretos. Sin ellas, la app muestra cuáles faltan.
+
+El app client debe registrar `http://localhost:5173/callback` como URL de callback y `http://localhost:5173` como URL de cierre de sesión, sin barra final. Por eso Vite usa siempre el puerto 5173 y falla si está ocupado.
+
+### Sesión
+
+- **Flujo:** Authorization Code con PKCE contra el managed login de Cognito.
+- **Tokens:** solo en memoria (CA-NF11.1). Al recargar la página o abrir otra pestaña no hay sesión en la SPA; una ruta protegida vuelve a pasar por Cognito, que no pide contraseña si su sesión sigue activa.
+- **`sessionStorage`:** guarda el `state` y el `code_verifier` del login en curso, porque deben sobrevivir a la redirección. No son tokens y se borran al volver. Si el login se abandona, se descartan pasados 15 minutos.
+- **Renovación:** con el refresh token, antes de que expire el access token. Si falla, la SPA borra la sesión y avisa al usuario.
+- **Cierre de sesión:** revoca el refresh token, borra los tokens de memoria y cierra la sesión de Cognito. El access token ya emitido sigue siendo válido en el API hasta expirar (CA-03.4).
+- **Roles en la interfaz:** ocultar enlaces y proteger rutas es solo experiencia de uso. La autorización la decide el API en cada solicitud.
+
 ## Flujo de trabajo
 
 - `main` está protegida: solo se cambia por pull request, con el check `ci` en verde y la aprobación de una persona distinta del autor.
