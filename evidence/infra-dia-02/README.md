@@ -39,7 +39,21 @@ aws logs describe-log-groups --log-group-name-prefix /donaciones/donaciones-acad
 | `POST /v1/donations/{id}/simulate` | JWT | `api/donations.*` |
 | `GET /v1/donations/me` | JWT | `api/donations.*` |
 
-`/simulate` aparece porque el stage es `academic`. En `dev` la plantilla la quita con la condición `IsAcademic`; eso se comprobó en la transformación de SAM, no con un stack desplegado.
+`/simulate` aparece porque el stage es `academic`.
+
+### Stage `dev` sin `/simulate` (CA-06.1)
+
+Se desplegó un stack temporal con `sam deploy --stack-name donaciones-piero` (`Stage=dev`):
+
+- `get-routes` devolvió 8 rutas: las de la tabla anterior menos `POST /v1/donations/{id}/simulate`.
+- El stack tenía 8 funciones Lambda: no se creó `SimulateDonationFunction`.
+- `POST /v1/donations/abc/simulate` respondió `404`, mientras `GET /v1/health` respondía `200`.
+
+### Limpieza con `sam delete` (CA-NF09.2)
+
+`sam delete --stack-name donaciones-piero --no-prompts` borró el stack. Después no quedaron tablas `donaciones-piero-*` ni grupos de logs `/donaciones/donaciones-piero/*` o `/aws/lambda/donaciones-piero*` (antes había 8).
+
+`sam delete` también borra del bucket de SAM los zips del código, que son los mismos que usan los demás stacks si el código es idéntico. Se volvieron a subir con `sam deploy --config-env academic --no-fail-on-empty-changeset`.
 
 ### Respuestas
 

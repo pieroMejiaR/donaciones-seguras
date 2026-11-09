@@ -81,7 +81,7 @@ sam delete --config-env academic
 sam delete --config-env cognito   # al final: los otros stacks importan sus valores
 ```
 
-`sam delete` borra también los grupos de logs, porque son recursos del stack. Queda el bucket que SAM crea para subir el código (`aws-sam-cli-managed-default`); se borra en la limpieza final del día 7.
+`sam delete` borra también los grupos de logs, porque son recursos del stack. Además borra del bucket de SAM los zips del código, que comparten todos los stacks con el mismo código; después de borrar un stack personal, Piero vuelve a subirlos con `sam deploy --config-env academic --no-fail-on-empty-changeset`. Queda el bucket que SAM crea para subir el código (`aws-sam-cli-managed-default`); se borra en la limpieza final del día 7.
 
 ## Equipo
 
