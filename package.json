@@ -1,0 +1,25 @@
+{
+  "name": "donaciones-seguras",
+  "private": true,
+  "description": "Plataforma de Donaciones Seguras: SPA en React y API serverless en AWS con enfoque Zero Trust.",
+  "workspaces": [
+    "web",
+    "api"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "npm run typecheck --workspaces",
+    "test": "npm run test --workspaces",
+    "build": "npm run build --workspaces"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.1"
+  }
+}

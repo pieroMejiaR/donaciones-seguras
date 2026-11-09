@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+.aws-sam/
+*.log
+
+# Secretos y configuración local
+.env
+.env.*
+!.env.example
+samconfig.local.toml
+
+# Sistema
+.DS_Store
+Thumbs.db
