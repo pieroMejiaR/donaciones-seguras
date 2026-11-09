@@ -23,7 +23,7 @@ stack_name = "donaciones-academic"
 capabilities = "CAPABILITY_IAM"
 resolve_s3 = true
 confirm_changeset = true
-parameter_overrides = "Stage=academic CognitoStackName=donaciones-cognito"
+parameter_overrides = "Stage=academic CognitoStackName=donaciones-cognito SpaOrigin=https://d2kgpnaifzb84g.cloudfront.net"
 
 [academic.delete.parameters]
 stack_name = "donaciones-academic"
@@ -42,3 +42,18 @@ parameter_overrides = "Environment=academic"
 
 [cognito.delete.parameters]
 stack_name = "donaciones-cognito"
+
+# Publicacion de la SPA (frontend.yaml): S3 privado, CloudFront, OAC y cabeceras de seguridad.
+# Se despliega una vez, despues del stack del API. ApiUrl se pasa en la linea de comandos:
+#   sam deploy --config-env frontend --parameter-overrides ApiUrl=<salida ApiUrl de donaciones-academic>
+[frontend.global.parameters]
+region = "us-east-2"
+
+[frontend.deploy.parameters]
+stack_name = "donaciones-frontend"
+template_file = "frontend.yaml"
+resolve_s3 = true
+confirm_changeset = true
+
+[frontend.delete.parameters]
+stack_name = "donaciones-frontend"

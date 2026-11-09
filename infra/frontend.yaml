@@ -1,0 +1,206 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Plataforma de Donaciones Seguras: publicacion de la SPA (RNF-HU-01, CA-NF11.2).
+  Bucket S3 privado, CloudFront con control de acceso al origen (OAC) y una politica de
+  cabeceras de seguridad con CSP y HSTS. Se despliega una sola vez, despues del stack del API.
+  Responsable: Piero Mejia (lider tecnico y DevOps).
+
+Parameters:
+  ApiUrl:
+    Type: String
+    AllowedPattern: ^https://[a-z0-9.-]+\.amazonaws\.com(/[A-Za-z0-9_-]+)?$
+    Description: Salida ApiUrl de donaciones-academic. La CSP solo deja a la SPA llamar a ese origen.
+
+  CognitoDomain:
+    Type: String
+    Default: https://*.auth.us-east-2.amazoncognito.com
+    AllowedPattern: ^https://[A-Za-z0-9.*-]+\.amazoncognito\.com$
+    Description: Dominio del managed login de Cognito, sin barra final. El comodin del prefijo es provisional hasta que exista el dominio; despues se pasa el dominio exacto.
+
+Resources:
+  # ============================================================================
+  # Bucket del sitio: privado, cifrado y sin hosting de sitio web. Solo CloudFront,
+  # y solo esta distribucion, puede leerlo (OAC). Hay que vaciarlo antes de sam delete.
+  # ============================================================================
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  SiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: SoloCloudFrontLee
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${SiteBucket.Arn}/*
+            Condition:
+              StringEquals:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${Distribution}
+          - Sid: SoloHttps
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt SiteBucket.Arn
+              - !Sub ${SiteBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${AWS::StackName}-oac
+        Description: Firma las solicitudes de CloudFront al bucket privado
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # ============================================================================
+  # Cabeceras de seguridad (RNF-HU-01, CA-NF11.2). La CSP deja cargar scripts y estilos
+  # solo del propio origen, y conectar solo al API y a Cognito. No hay scripts ni estilos
+  # en linea: si la SPA los necesitara, se cambia la SPA y no la politica.
+  # ============================================================================
+  SecurityHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub ${AWS::StackName}-security-headers
+        Comment: CSP, HSTS y cabeceras de seguridad de la SPA
+        SecurityHeadersConfig:
+          ContentSecurityPolicy:
+            Override: true
+            ContentSecurityPolicy: !Sub
+              - >-
+                default-src 'self';
+                script-src 'self';
+                style-src 'self';
+                img-src 'self' data:;
+                font-src 'self';
+                connect-src 'self' ${ApiOrigin} https://cognito-idp.${AWS::Region}.amazonaws.com ${CognitoDomain};
+                frame-ancestors 'none';
+                base-uri 'self';
+                form-action 'self';
+                object-src 'none';
+                upgrade-insecure-requests
+              - ApiOrigin: !Join
+                  - /
+                  - - !Select [0, !Split ["/", !Ref ApiUrl]]
+                    - !Select [1, !Split ["/", !Ref ApiUrl]]
+                    - !Select [2, !Split ["/", !Ref ApiUrl]]
+          StrictTransportSecurity:
+            Override: true
+            AccessControlMaxAgeSec: 31536000
+            IncludeSubdomains: true
+            Preload: false
+          ContentTypeOptions:
+            Override: true
+          FrameOptions:
+            Override: true
+            FrameOption: DENY
+          ReferrerPolicy:
+            Override: true
+            ReferrerPolicy: no-referrer
+        CustomHeadersConfig:
+          Items:
+            - Header: Permissions-Policy
+              Value: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+              Override: true
+            - Header: Cross-Origin-Opener-Policy
+              Value: same-origin
+              Override: true
+            - Header: Cross-Origin-Resource-Policy
+              Value: same-origin
+              Override: true
+
+  # ============================================================================
+  # Distribucion. index.html y las rutas de la SPA no se guardan en cache, para que una
+  # publicacion nueva se vea sin invalidar. Los archivos de /assets/* llevan hash en el
+  # nombre y se guardan un ano. Un 403 o 404 del bucket devuelve index.html, que es lo
+  # que necesita el enrutador de la SPA en una recarga.
+  # ============================================================================
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub SPA de ${AWS::StackName}
+        DefaultRootObject: index.html
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: sitio
+            DomainName: !GetAtt SiteBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt OriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        DefaultCacheBehavior:
+          TargetOriginId: sitio
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # CachingDisabled (administrada por AWS)
+          ResponseHeadersPolicyId: !Ref SecurityHeadersPolicy
+        CacheBehaviors:
+          - PathPattern: /assets/*
+            TargetOriginId: sitio
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods:
+              - GET
+              - HEAD
+            CachedMethods:
+              - GET
+              - HEAD
+            Compress: true
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized (administrada por AWS)
+            ResponseHeadersPolicyId: !Ref SecurityHeadersPolicy
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+
+Outputs:
+  SiteUrl:
+    Description: URL publica de la SPA. Es el origen que va en SpaOrigin del API y en las URL de Cognito.
+    Value: !Sub https://${Distribution.DomainName}
+
+  SiteBucketName:
+    Description: Bucket al que se sube web/dist. Hay que vaciarlo antes de sam delete.
+    Value: !Ref SiteBucket
+
+  DistributionId:
+    Value: !Ref Distribution
