@@ -101,6 +101,23 @@ Las rutas siguen la matriz de `docs/threat-model.md`. Las de lectura pública no
 
 Las cuatro tablas usan claves genéricas para que el backend decida qué guarda en cada una: `pk` como clave de partición y un índice `gsi1` (`gsi1pk`, `gsi1sk`) en `Projects`, `Donations` y `AuditEvents`. `Idempotency` expira sus registros con TTL en el atributo `expiresAt` (epoch en segundos).
 
+### Permisos IAM
+
+Cada función tiene su propio rol (`<Nombre>Role` en `infra/template.yaml`) con una política en línea. Ningún rol usa `AWSLambdaBasicExecutionRole`, porque da permisos de logs sobre todos los recursos, y ninguno tiene comodines de acción. El único `*` es el sufijo `:*` del ARN del grupo de logs de la propia función, que cubre sus flujos de log. Ningún rol tiene `Scan`, `DeleteItem` ni `BatchWriteItem`.
+
+| Función | Logs | DynamoDB |
+| --- | --- | --- |
+| `Health` | propios | ninguno |
+| `ListProjects`, `GetStats` | propios | `Query` en el índice `gsi1` de Projects |
+| `GetProject` | propios | `GetItem` en Projects |
+| `CreateProject` | propios | `PutItem` en Projects y AuditEvents |
+| `PublishProject` | propios | `GetItem` y `UpdateItem` en Projects; `PutItem` en AuditEvents |
+| `CreateDonation` | propios | `GetItem` y `ConditionCheckItem` en Projects; `GetItem` y `PutItem` en Idempotency; `PutItem` en Donations y AuditEvents |
+| `SimulateDonation` | propios | `GetItem` y `UpdateItem` en Donations y Projects; `PutItem` en AuditEvents |
+| `ListMyDonations` | propios | `Query` en el índice `gsi1` de Donations |
+
+Quien cambie el acceso a datos de una función ajusta su rol en el mismo pull request. La referencia de qué acciones necesita cada módulo está en `docs/data-model.md`. Una transacción (`TransactWriteItems`) se autoriza con la acción de cada ítem, y la lectura de un índice exige el ARN del índice.
+
 ### Limpieza
 
 ```bash
