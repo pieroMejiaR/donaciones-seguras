@@ -42,3 +42,17 @@ parameter_overrides = "Environment=academic"
 
 [cognito.delete.parameters]
 stack_name = "donaciones-cognito"
+
+# CloudTrail de la cuenta (cloudtrail.yaml). Se despliega una vez, lo hace Piero:
+#   sam deploy --config-env cloudtrail
+[cloudtrail.global.parameters]
+region = "us-east-2"
+
+[cloudtrail.deploy.parameters]
+stack_name = "donaciones-cloudtrail"
+template_file = "cloudtrail.yaml"
+resolve_s3 = true
+confirm_changeset = true
+
+[cloudtrail.delete.parameters]
+stack_name = "donaciones-cloudtrail"
