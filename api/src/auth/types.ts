@@ -18,9 +18,12 @@ export interface CognitoJwtPayload {
   client_id?: string;
   token_use?: "access" | "id" | string;
   scope?: string;
-  "cognito:groups"?: string[];
+  "cognito:groups"?: string[] | string;
   username?: string;
   "cognito:username"?: string;
+  amr?: string[] | string;
+  auth_time?: number;
+  mfa_verified?: boolean | string;
   exp?: number;
   iat?: number;
   email?: string;
@@ -38,6 +41,16 @@ export interface AuthContext {
   scopes: string[];
   /** Tipo de token recibido ("access" | "id") */
   tokenUse: string;
+  /** Metodos de autenticacion reportados por Cognito (ej. ["pwd", "sw_token"]) */
+  amr: string[];
+  /** Indica si la sesion incluyo verificacion multifactor TOTP */
+  mfaVerified: boolean;
+  /** Emisor (iss) y client_id cuando estan presentes en el token */
+  iss?: string;
+  clientId?: string;
+  /** Timestamps de emision y expiracion (epoch en segundos) */
+  iat?: number;
+  exp?: number;
   /** Claims completos deserializados para auditoria */
   rawClaims: CognitoJwtPayload;
 }

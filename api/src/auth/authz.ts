@@ -1,6 +1,38 @@
 import { ForbiddenError } from "./errors.js";
 import type { AppScope, AuthContext, UserRole } from "./types.js";
 
+/** Roles que exigen autenticacion multifactor TOTP obligatoria (HU-11). */
+export const MFA_REQUIRED_ROLES: ReadonlySet<UserRole> = new Set<UserRole>(["GESTOR", "AUDITOR"]);
+
+/**
+ * Comprueba si el usuario autenticado completo un segundo factor (TOTP MFA).
+ */
+export function hasMfa(ctx: AuthContext): boolean {
+  return ctx.mfaVerified;
+}
+
+/**
+ * Exige verificacion TOTP MFA activa en la sesion (HU-11, T13, T14).
+ */
+export function requireMfa(ctx: AuthContext): void {
+  if (!hasMfa(ctx)) {
+    throw new ForbiddenError(
+      "MFA_REQUIRED",
+      "Acceso denegado: se requiere autenticación multifactor (TOTP MFA)",
+    );
+  }
+}
+
+/**
+ * Exige rol RBAC y, para roles privilegiados (GESTOR y AUDITOR), exige TOTP MFA obligatorio (HU-11).
+ */
+export function requireRoleWithMfa(ctx: AuthContext, role: UserRole): void {
+  requireRole(ctx, role);
+  if (MFA_REQUIRED_ROLES.has(role)) {
+    requireMfa(ctx);
+  }
+}
+
 /**
  * Comprueba si el usuario autenticado posee un rol especifico.
  */
