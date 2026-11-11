@@ -155,8 +155,38 @@ Cuando un usuario hace logout en la SPA (`oidc-client-ts`), el cliente invoca el
 - Como consecuencia, el cliente no podrá obtener nuevos Access Tokens una vez que expire el token actual.
 - **Sin embargo, el Access Token que ya fue emitido y se encuentra en su ventana de validez continuará siendo aceptado como válido por API Gateway y las Lambdas hasta que alcance su tiempo de expiración (`exp`)**.
 
-### 6.3. Mitigación y Postura Zero Trust
+### 6.3. Mitigación, Limitaciones Conocidas y Postura Zero Trust (§6.3)
+
 Para acotar la ventana de exposición ante un posible token comprometido, la plataforma implementa:
-1. **Tiempo de Vida Corto (*Short-Lived Access Tokens*):** El `AccessTokenValidity` en el User Pool Client de Cognito se configura en **15 minutos** (el mínimo soportado por AWS Cognito User Pools para access tokens es de 5 a 60 minutos; establecemos 15 minutos o menos conforme a HU-03).
+1. **Tiempo de Vida Corto (*Short-Lived Access Tokens*):** El `AccessTokenValidity` en el User Pool Client de Cognito se configura en **15 minutos** (el mínimo soportado por AWS Cognito User Pools para access tokens es de 5 minutos; establecemos 15 minutos o menos conforme a HU-03).
 2. **Tokens Exclusivamente en Memoria:** La SPA no persiste tokens en `localStorage` o cookies, lo que garantiza que al cerrar la pestaña o recargar la página tras el logout, el cliente desecha el token local de inmediato.
-3. **Evolución a Verificación Centralizada (Opcional HU-12):** Para operaciones críticas o entornos de máxima seguridad, se documenta la alternativa de consultar una lista de revocación centralizada (ej. DynamoDB TTL / AWS Verified Permissions con evaluación contextual en tiempo real).
+3. **Evolución a Verificación Centralizada (Opcional HU-12):** Para operaciones críticas o entornos de máxima seguridad, se implementa la alternativa con AWS Verified Permissions (`IsAuthorized`) y políticas Cedar para evaluación contextual centralizada.
+
+Adicionalmente, las pruebas de protocolo contra Cognito evidenciaron tres **limitaciones estructurales del proveedor de identidad**:
+- **PKCE no es exigido en servidor por Cognito:** En un *Public Client* de Cognito, el endpoint `/oauth2/authorize` acepta solicitudes sin `code_challenge` si un cliente externo las omite. La garantía efectiva de PKCE (método `S256`) recae en la SPA (`oidc-client-ts`), que siempre genera `code_verifier` y `code_challenge`.
+- **Registro abierto en Managed Login (`AllowAdminCreateUserOnly: false`):** La interfaz alojada muestra la opción «Create an account». Sin embargo, todo usuario autoregistrado nace **sin pertenencia a ningún grupo** (`cognito:groups` vacío). Dado que todas las rutas protegidas exigen rol explícito (`DONANTE`, `GESTOR` o `AUDITOR`) en Lambda (`authz`), un usuario recién registrado recibe **403 Forbidden** en toda operación protegida hasta ser asignado explícitamente por un administrador.
+- **Propagación del claim MFA (`amr`) hacia el Access Token:** Por defecto, Cognito incluye el arreglo `amr` (`["pwd", "sw_token"]`) en el **ID Token**, pero no lo incorpora en el **Access Token** sin un trigger `PreTokenGeneration` v2.0. Por ello se diseña la verificación dual (`amr` o claim `mfa_verified` inyectado por trigger) junto con la activación obligatoria de TOTP para `GESTOR` y `AUDITOR` (HU-11).
+
+---
+
+## 7. Mapeo a los 7 Principios NIST SP 800-207 y Arquitectura PE / PA / PEP (CA-NF02.3)
+
+### 7.1. Mapeo a los 7 Principios Zero Trust (NIST SP 800-207)
+
+| # | Principio NIST SP 800-207 | Implementación en la Plataforma de Donaciones Seguras | Evidencia / Verificación |
+| :---: | :--- | :--- | :--- |
+| **1** | Todos los orígenes de datos y servicios de cómputo son recursos. | Cada API Lambda, tabla DynamoDB (`Projects`, `Donations`, `Idempotency`, `Audit`) y el endpoint `/simulate` se tratan como recursos aislados con contratos estrictos. | `infra/template.yaml`, `docs/api.yaml` |
+| **2** | Toda comunicación es segura sin importar la ubicación de red. | HTTPS obligatorio (TLS 1.2/1.3) desde CloudFront/SPA hacia Cognito y API Gateway; HSTS y CSP estricta sin confiar en origen de red ni VPC privada implícita. | `infra/cloudfront.yaml`, `api/src/auth/authorizer.ts` |
+| **3** | El acceso a recursos individuales se concede por sesión. | Tokens JWT de vida corta ($\le 15$ min) en memoria de la SPA; cada invocación se autentica y autoriza por petición sin sesiones persistentes en el servidor. | `infra/cognito-authorizer.yaml`, `web/src/auth/` |
+| **4** | El acceso se determina por política dinámica (identidad, rol, estado). | Evaluación combinada de identidad (`sub`), scopes OAuth (`api/*`), grupo RBAC (`cognito:groups`), estado de MFA (`amr`/`mfa_verified`), etapa (`STAGE=academic`) y pertenencia del recurso (`donorSub`). | `api/src/auth/authz.ts`, `docs/cedar/policies.cedar` |
+| **5** | La organización monitorea la integridad y postura de todos los activos. | Logs JSON estructurados por petición (`requestId`, `action`, `outcome`), CloudTrail con bucket privado, IAM Access Analyzer sin comodines y eventos `AuditEvents` seudonimizados. | `api/src/audit/audit.ts`, `infra/cloudtrail.yaml`, `evidence/T10/` |
+| **6** | La autenticación y autorización son dinámicas y estrictas antes del acceso. | Doble barrera antes de tocar DynamoDB: (1) JWT Authorizer valida firma RS256, `iss`, `client_id` y `scope`; (2) Lambda valida `token_use=access`, rol, MFA y `ownership` en cada request. | `T02`, `T03`, `T09`, `T11`, `T12`, `T13`, `T14` |
+| **7** | Se recopila telemetría para mejorar continuamente la postura de seguridad. | Registro de intentos denegados (`DENIED`) en `AuditTable` con `actorRef` seudonimizado, análisis de latencia y trazabilidad completa de amenazas en STRIDE. | `api/src/handlers/projects.write.test.ts`, `evidence/` |
+
+### 7.2. Mapeo a los Componentes Lógicos PE / PA / PEP
+
+| Componente NIST | Rol Arquitectónico | Implementación Concreta en el Sistema |
+| :--- | :--- | :--- |
+| **PE** (*Policy Engine*) | Toma la decisión final de conceder, denegar o revocar el acceso según políticas definidas. | **Autorización embebida:** Módulo [`api/src/auth/authz.ts`](../api/src/auth/authz.ts) (`requireRole`, `requireScope`, `requireMfa`, `assertOwnership`).<br/>**Autorización externalizada (HU-12):** Amazon Verified Permissions evaluando [`docs/cedar/policies.cedar`](cedar/policies.cedar) vía `IsAuthorized`. |
+| **PA** (*Policy Administrator*) | Establece o cierra la ruta de comunicación y emite/revoca credenciales de sesión. | **AWS Cognito User Pool** (emite Access Tokens de 15 min, gestiona grupos `DONANTE`/`GESTOR`/`AUDITOR`, TOTP MFA y revoca Refresh Tokens en `/oauth2/revoke`) junto a la configuración de rutas del stage en **API Gateway HTTP API**. |
+| **PEP** (*Policy Enforcement Point*) | Habilita, monitorea y corta las conexiones entre sujeto y recurso aplicando la decisión del PE/PA. | **PEP Perimetral:** API Gateway HTTP API **JWT Authorizer** (valida firma, `iss`, `aud`/`client_id` y scopes por ruta; rechaza tokens inválidos con 401).<br/>**PEP de Aplicación:** Wrapper de inicio en cada handler Lambda (`extractAuthContext` + llamadas a `authz` o `authorizeWithCedar` antes de cualquier lectura/escritura en DynamoDB). |
