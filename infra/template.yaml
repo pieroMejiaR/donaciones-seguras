@@ -197,6 +197,10 @@ Resources:
   # Funciones: una por ruta de la matriz de control de acceso (docs/threat-model.md).
   # Cada una escribe en su propio grupo de logs con retencion de 14 dias, para que
   # sam delete no deje grupos huerfanos.
+  # Cada funcion tiene su propio rol IAM (RNF-HU-03): solo escribe en su grupo de logs y
+  # recibe las acciones DynamoDB exactas sobre las tablas que usa (docs/data-model.md),
+  # sin comodines de accion ni de recurso. No usa AWSLambdaBasicExecutionRole porque
+  # concede logs sobre todos los recursos.
   # El codigo sale de npm run build: api/dist/<funcion>/index.mjs.
   # ============================================================================
   HealthFunction:
@@ -204,6 +208,7 @@ Resources:
     Properties:
       Description: GET /v1/health
       CodeUri: ../api/dist/health
+      Role: !GetAtt HealthRole.Arn
       LoggingConfig:
         LogGroup: !Ref HealthLogGroup
       Events:
@@ -224,11 +229,35 @@ Resources:
       LogGroupName: !Sub /donaciones/${AWS::StackName}/health
       RetentionInDays: 14
 
+  HealthRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Rol de HealthFunction. Solo escribe en su grupo de logs; no toca datos.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: HealthAcceso
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: LogsPropios
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt HealthLogGroup.Arn
+
   ListProjectsFunction:
     Type: AWS::Serverless::Function
     Properties:
       Description: GET /v1/projects (HU-01)
       CodeUri: ../api/dist/listProjects
+      Role: !GetAtt ListProjectsRole.Arn
       LoggingConfig:
         LogGroup: !Ref ListProjectsLogGroup
       Environment:
@@ -252,11 +281,39 @@ Resources:
       LogGroupName: !Sub /donaciones/${AWS::StackName}/listProjects
       RetentionInDays: 14
 
+  ListProjectsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Rol de ListProjectsFunction. Logs propios y Query sobre el indice gsi1 de Projects.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ListProjectsAcceso
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: LogsPropios
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt ListProjectsLogGroup.Arn
+              - Sid: ConsultarCatalogo
+                Effect: Allow
+                Action: dynamodb:Query
+                Resource: !Sub ${ProjectsTable.Arn}/index/gsi1
+
   GetProjectFunction:
     Type: AWS::Serverless::Function
     Properties:
       Description: GET /v1/projects/{id} (HU-02)
       CodeUri: ../api/dist/getProject
+      Role: !GetAtt GetProjectRole.Arn
       LoggingConfig:
         LogGroup: !Ref GetProjectLogGroup
       Environment:
@@ -280,11 +337,39 @@ Resources:
       LogGroupName: !Sub /donaciones/${AWS::StackName}/getProject
       RetentionInDays: 14
 
+  GetProjectRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Rol de GetProjectFunction. Logs propios y GetItem sobre Projects.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: GetProjectAcceso
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: LogsPropios
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt GetProjectLogGroup.Arn
+              - Sid: LeerProyecto
+                Effect: Allow
+                Action: dynamodb:GetItem
+                Resource: !GetAtt ProjectsTable.Arn
+
   GetStatsFunction:
     Type: AWS::Serverless::Function
     Properties:
       Description: GET /v1/stats (HU-09)
       CodeUri: ../api/dist/getStats
+      Role: !GetAtt GetStatsRole.Arn
       LoggingConfig:
         LogGroup: !Ref GetStatsLogGroup
       Environment:
@@ -308,11 +393,39 @@ Resources:
       LogGroupName: !Sub /donaciones/${AWS::StackName}/getStats
       RetentionInDays: 14
 
+  GetStatsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Rol de GetStatsFunction. Logs propios y Query sobre el indice gsi1 de Projects.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: GetStatsAcceso
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: LogsPropios
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt GetStatsLogGroup.Arn
+              - Sid: ConsultarCatalogo
+                Effect: Allow
+                Action: dynamodb:Query
+                Resource: !Sub ${ProjectsTable.Arn}/index/gsi1
+
   CreateProjectFunction:
     Type: AWS::Serverless::Function
     Properties:
       Description: POST /v1/projects (HU-08)
       CodeUri: ../api/dist/createProject
+      Role: !GetAtt CreateProjectRole.Arn
       LoggingConfig:
         LogGroup: !Ref CreateProjectLogGroup
       Environment:
@@ -339,11 +452,41 @@ Resources:
       LogGroupName: !Sub /donaciones/${AWS::StackName}/createProject
       RetentionInDays: 14
 
+  CreateProjectRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Rol de CreateProjectFunction. Logs propios y PutItem sobre Projects y AuditEvents.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CreateProjectAcceso
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: LogsPropios
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt CreateProjectLogGroup.Arn
+              - Sid: CrearProyectoYAuditoria
+                Effect: Allow
+                Action: dynamodb:PutItem
+                Resource:
+                  - !GetAtt ProjectsTable.Arn
+                  - !GetAtt AuditEventsTable.Arn
+
   PublishProjectFunction:
     Type: AWS::Serverless::Function
     Properties:
       Description: POST /v1/projects/{id}/publish (HU-08)
       CodeUri: ../api/dist/publishProject
+      Role: !GetAtt PublishProjectRole.Arn
       LoggingConfig:
         LogGroup: !Ref PublishProjectLogGroup
       Environment:
@@ -370,11 +513,45 @@ Resources:
       LogGroupName: !Sub /donaciones/${AWS::StackName}/publishProject
       RetentionInDays: 14
 
+  PublishProjectRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Rol de PublishProjectFunction. Logs propios, leer y actualizar Projects, y PutItem sobre AuditEvents.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PublishProjectAcceso
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: LogsPropios
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt PublishProjectLogGroup.Arn
+              - Sid: LeerYPublicarProyecto
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt ProjectsTable.Arn
+              - Sid: EscribirAuditoria
+                Effect: Allow
+                Action: dynamodb:PutItem
+                Resource: !GetAtt AuditEventsTable.Arn
+
   CreateDonationFunction:
     Type: AWS::Serverless::Function
     Properties:
       Description: POST /v1/donations (HU-05)
       CodeUri: ../api/dist/createDonation
+      Role: !GetAtt CreateDonationRole.Arn
       LoggingConfig:
         LogGroup: !Ref CreateDonationLogGroup
       Environment:
@@ -403,6 +580,47 @@ Resources:
       LogGroupName: !Sub /donaciones/${AWS::StackName}/createDonation
       RetentionInDays: 14
 
+  CreateDonationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Rol de CreateDonationFunction. Logs propios y los accesos de la transaccion de HU-05 (proyecto, idempotencia, donacion y auditoria).
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CreateDonationAcceso
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: LogsPropios
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt CreateDonationLogGroup.Arn
+              - Sid: VerificarProyecto
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:ConditionCheckItem
+                Resource: !GetAtt ProjectsTable.Arn
+              - Sid: RegistroDeIdempotencia
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                Resource: !GetAtt IdempotencyTable.Arn
+              - Sid: CrearDonacionYAuditoria
+                Effect: Allow
+                Action: dynamodb:PutItem
+                Resource:
+                  - !GetAtt DonationsTable.Arn
+                  - !GetAtt AuditEventsTable.Arn
+
   # Solo existe en el stage academic (CA-06.1): la condicion quita la funcion y su ruta.
   SimulateDonationFunction:
     Type: AWS::Serverless::Function
@@ -410,6 +628,7 @@ Resources:
     Properties:
       Description: POST /v1/donations/{id}/simulate (HU-06), solo en el stage academic
       CodeUri: ../api/dist/simulateDonation
+      Role: !GetAtt SimulateDonationRole.Arn
       LoggingConfig:
         LogGroup: !Ref SimulateDonationLogGroup
       Environment:
@@ -438,11 +657,48 @@ Resources:
       LogGroupName: !Sub /donaciones/${AWS::StackName}/simulateDonation
       RetentionInDays: 14
 
+  SimulateDonationRole:
+    Type: AWS::IAM::Role
+    Condition: IsAcademic
+    Properties:
+      Description: Rol de SimulateDonationFunction. Logs propios; leer y actualizar Donations y Projects (HU-06); PutItem sobre AuditEvents.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SimulateDonationAcceso
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: LogsPropios
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt SimulateDonationLogGroup.Arn
+              - Sid: ConfirmarDonacionYAcumulado
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !GetAtt DonationsTable.Arn
+                  - !GetAtt ProjectsTable.Arn
+              - Sid: EscribirAuditoria
+                Effect: Allow
+                Action: dynamodb:PutItem
+                Resource: !GetAtt AuditEventsTable.Arn
+
   ListMyDonationsFunction:
     Type: AWS::Serverless::Function
     Properties:
       Description: GET /v1/donations/me (HU-07)
       CodeUri: ../api/dist/listMyDonations
+      Role: !GetAtt ListMyDonationsRole.Arn
       LoggingConfig:
         LogGroup: !Ref ListMyDonationsLogGroup
       Environment:
@@ -467,6 +723,33 @@ Resources:
     Properties:
       LogGroupName: !Sub /donaciones/${AWS::StackName}/listMyDonations
       RetentionInDays: 14
+
+  ListMyDonationsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Rol de ListMyDonationsFunction. Logs propios y Query sobre el indice gsi1 de Donations.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ListMyDonationsAcceso
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: LogsPropios
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt ListMyDonationsLogGroup.Arn
+              - Sid: ConsultarHistorialPropio
+                Effect: Allow
+                Action: dynamodb:Query
+                Resource: !Sub ${DonationsTable.Arn}/index/gsi1
 
 Outputs:
   ApiUrl:

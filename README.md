@@ -10,7 +10,7 @@ Prototipo académico de una plataforma de donaciones con enfoque Zero Trust: una
 | --- | --- |
 | `web/` | SPA con React y Vite |
 | `api/` | Funciones Lambda en TypeScript |
-| `infra/` | Plantillas SAM: `template.yaml` (API, Lambdas y DynamoDB) y `cognito-authorizer.yaml` (identidad) |
+| `infra/` | Plantillas SAM: `template.yaml` (API, Lambdas y DynamoDB), `cognito-authorizer.yaml` (identidad) y `cloudtrail.yaml` (auditoría de la cuenta) |
 | `docs/` | Modelo de amenazas, contrato OpenAPI y demás documentos |
 | `evidence/` | Evidencia sanitizada de las pruebas |
 | `.github/` | CI y plantilla de pull request |
@@ -77,6 +77,7 @@ Región `us-east-2` (Ohio): la cuenta no permite otra.
 | --- | --- | --- | --- |
 | `donaciones-cognito` | `cognito-authorizer.yaml` | `academic` | Piero, una sola vez; lo comparten todos |
 | `donaciones-academic` | `template.yaml` | `academic` | Piero; lo usan la SPA y la demo |
+| `donaciones-cloudtrail` | `cloudtrail.yaml` | no aplica | Piero, una sola vez; es el trail de la cuenta |
 | `donaciones-<nombre>` | `template.yaml` | `dev` | Cada integrante, para sus pruebas |
 
 `template.yaml` importa del stack de Cognito el emisor y el client_id del JWT authorizer, así que `donaciones-cognito` tiene que existir antes. En el stage `dev` no existe `POST /v1/donations/{id}/simulate` (CA-06.1).
@@ -108,9 +109,46 @@ No usar `sam build`: el código ya sale empaquetado de `npm run build`. La URL d
 
 Las rutas siguen la matriz de `docs/threat-model.md`. Las de lectura pública no piden token; las demás exigen un access token de Cognito con el scope de la ruta. Mientras un módulo no esté implementado, su ruta responde 501 con `{ code, message, requestId }`.
 
+### Observabilidad
+
+**Logs de las funciones.** Cada función escribe en `/donaciones/<stack>/<función>`, en formato JSON y con retención de 14 días. `sam delete` borra esos grupos junto con el stack. Las líneas de la aplicación guardan `requestId`, `action`, `outcome`, `statusCode`, `errorCode` y `durationMs`; el código no registra tokens ni cuerpos de solicitud.
+
+**CloudTrail.** El stack `donaciones-cloudtrail` crea el trail `donaciones-trail`: eventos de administración (lectura y escritura) de todas las regiones, incluidos los de servicios globales como IAM, con validación de integridad de los archivos. Los logs van a un bucket S3 privado, cifrado, accesible solo por HTTPS y con vencimiento a los 30 días. No registra eventos de datos, que se cobran. Se despliega una sola vez, porque un trail es de la cuenta y no de cada stack:
+
+```bash
+cd infra
+sam deploy --config-env cloudtrail
+```
+
+Para ver qué pasó sin esperar a los archivos de S3, el historial de eventos responde de inmediato. Por ejemplo, quién ejecutó los despliegues:
+
+```bash
+aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=ExecuteChangeSet --max-results 5
+aws cloudtrail lookup-events --region us-east-1 --lookup-attributes AttributeKey=EventName,AttributeValue=PutRolePolicy --max-results 5
+```
+
+Los eventos de IAM son globales y el historial los guarda en `us-east-1`, por eso la segunda consulta lleva esa región.
+
 ### Tablas
 
 Las cuatro tablas usan claves genéricas para que el backend decida qué guarda en cada una: `pk` como clave de partición y un índice `gsi1` (`gsi1pk`, `gsi1sk`) en `Projects`, `Donations` y `AuditEvents`. `Idempotency` expira sus registros con TTL en el atributo `expiresAt` (epoch en segundos).
+
+### Permisos IAM
+
+Cada función tiene su propio rol (`<Nombre>Role` en `infra/template.yaml`) con una política en línea. Ningún rol usa `AWSLambdaBasicExecutionRole`, porque da permisos de logs sobre todos los recursos, y ninguno tiene comodines de acción. El único `*` es el sufijo `:*` del ARN del grupo de logs de la propia función, que cubre sus flujos de log. Ningún rol tiene `Scan`, `DeleteItem` ni `BatchWriteItem`.
+
+| Función | Logs | DynamoDB |
+| --- | --- | --- |
+| `Health` | propios | ninguno |
+| `ListProjects`, `GetStats` | propios | `Query` en el índice `gsi1` de Projects |
+| `GetProject` | propios | `GetItem` en Projects |
+| `CreateProject` | propios | `PutItem` en Projects y AuditEvents |
+| `PublishProject` | propios | `GetItem` y `UpdateItem` en Projects; `PutItem` en AuditEvents |
+| `CreateDonation` | propios | `GetItem` y `ConditionCheckItem` en Projects; `GetItem` y `PutItem` en Idempotency; `PutItem` en Donations y AuditEvents |
+| `SimulateDonation` | propios | `GetItem` y `UpdateItem` en Donations y Projects; `PutItem` en AuditEvents |
+| `ListMyDonations` | propios | `Query` en el índice `gsi1` de Donations |
+
+Quien cambie el acceso a datos de una función ajusta su rol en el mismo pull request. La referencia de qué acciones necesita cada módulo está en `docs/data-model.md`. Una transacción (`TransactWriteItems`) se autoriza con la acción de cada ítem, y la lectura de un índice exige el ARN del índice.
 
 ### Limpieza
 
@@ -119,6 +157,15 @@ cd infra
 sam delete --stack-name donaciones-<nombre>
 sam delete --config-env academic
 sam delete --config-env cognito   # al final: los otros stacks importan sus valores
+```
+
+El stack de CloudTrail se borra aparte. El bucket tiene que estar vacío, así que primero se detiene el trail y después se vacía; el nombre del bucket sale de la salida `TrailBucketName` del stack. Si CloudTrail alcanza a escribir otro archivo, el borrado falla: se vacía de nuevo y se repite.
+
+```bash
+aws cloudtrail stop-logging --name donaciones-trail
+aws s3 rm s3://<TrailBucketName> --recursive
+cd infra
+sam delete --config-env cloudtrail
 ```
 
 `sam delete` borra también los grupos de logs, porque son recursos del stack. Además borra del bucket de SAM los zips del código, que comparten todos los stacks con el mismo código; después de borrar un stack personal, Piero vuelve a subirlos con `sam deploy --config-env academic --no-fail-on-empty-changeset`. Queda el bucket que SAM crea para subir el código (`aws-sam-cli-managed-default`); se borra en la limpieza final del día 7.
