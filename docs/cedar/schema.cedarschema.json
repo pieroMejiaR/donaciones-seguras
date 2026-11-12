@@ -1,0 +1,128 @@
+{
+  "DonacionesSeguras": {
+    "entityTypes": {
+      "User": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "sub": { "type": "String", "required": true },
+            "roles": {
+              "type": "Set",
+              "element": { "type": "String" },
+              "required": true
+            },
+            "mfaVerified": { "type": "Boolean", "required": true }
+          }
+        }
+      },
+      "Project": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "projectId": { "type": "String", "required": true },
+            "status": { "type": "String", "required": true }
+          }
+        }
+      },
+      "Donation": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "donationId": { "type": "String", "required": true },
+            "ownerSub": { "type": "String", "required": true },
+            "status": { "type": "String", "required": true }
+          }
+        }
+      }
+    },
+    "actions": {
+      "createProject": {
+        "appliesTo": {
+          "principalTypes": ["User"],
+          "resourceTypes": ["Project"],
+          "context": {
+            "type": "Record",
+            "attributes": {
+              "hasValidAccessToken": { "type": "Boolean", "required": true },
+              "scopes": {
+                "type": "Set",
+                "element": { "type": "String" },
+                "required": true
+              }
+            }
+          }
+        }
+      },
+      "publishProject": {
+        "appliesTo": {
+          "principalTypes": ["User"],
+          "resourceTypes": ["Project"],
+          "context": {
+            "type": "Record",
+            "attributes": {
+              "hasValidAccessToken": { "type": "Boolean", "required": true },
+              "scopes": {
+                "type": "Set",
+                "element": { "type": "String" },
+                "required": true
+              }
+            }
+          }
+        }
+      },
+      "createDonation": {
+        "appliesTo": {
+          "principalTypes": ["User"],
+          "resourceTypes": ["Project"],
+          "context": {
+            "type": "Record",
+            "attributes": {
+              "hasValidAccessToken": { "type": "Boolean", "required": true },
+              "scopes": {
+                "type": "Set",
+                "element": { "type": "String" },
+                "required": true
+              }
+            }
+          }
+        }
+      },
+      "listOwnDonations": {
+        "appliesTo": {
+          "principalTypes": ["User"],
+          "resourceTypes": ["Donation"],
+          "context": {
+            "type": "Record",
+            "attributes": {
+              "hasValidAccessToken": { "type": "Boolean", "required": true },
+              "scopes": {
+                "type": "Set",
+                "element": { "type": "String" },
+                "required": true
+              },
+              "requestedOwnerSub": { "type": "String", "required": true }
+            }
+          }
+        }
+      },
+      "simulateDonation": {
+        "appliesTo": {
+          "principalTypes": ["User"],
+          "resourceTypes": ["Donation"],
+          "context": {
+            "type": "Record",
+            "attributes": {
+              "hasValidAccessToken": { "type": "Boolean", "required": true },
+              "scopes": {
+                "type": "Set",
+                "element": { "type": "String" },
+                "required": true
+              },
+              "stage": { "type": "String", "required": true }
+            }
+          }
+        }
+      }
+    }
+  }
+}
