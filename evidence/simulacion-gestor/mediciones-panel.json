@@ -1,0 +1,105 @@
+{
+  "measurements": [
+    {
+      "captura": "06-panel.png",
+      "nota": "Panel del gestor: crear, proyectos de la sesión y publicar por identificador",
+      "path": "/gestor",
+      "title": "Panel del gestor · Donaciones Seguras",
+      "viewportWidth": 375,
+      "scrollWidth": 375,
+      "height": 1704,
+      "focused": "Panel del gestor",
+      "localStorage": 0,
+      "sessionStorage": 0,
+      "smallTargets": []
+    },
+    {
+      "captura": "07-errores.png",
+      "nota": "Errores asociados a cada campo; foco en el primero",
+      "path": "/gestor",
+      "title": "Panel del gestor · Donaciones Seguras",
+      "viewportWidth": 375,
+      "scrollWidth": 375,
+      "height": 1826,
+      "focused": "titulo",
+      "localStorage": 0,
+      "sessionStorage": 0,
+      "smallTargets": []
+    },
+    {
+      "captura": "08-borrador-creado.png",
+      "nota": "Borrador creado: mensaje con foco y tarjeta con su identificador",
+      "path": "/gestor",
+      "title": "Panel del gestor · Donaciones Seguras",
+      "viewportWidth": 375,
+      "scrollWidth": 375,
+      "height": 2036,
+      "focused": "Borrador «Botiquín comunitario en Yura» creado. Puedes publi",
+      "localStorage": 0,
+      "sessionStorage": 0,
+      "smallTargets": []
+    },
+    {
+      "captura": "09-confirmar-publicacion.png",
+      "nota": "Publicar pide confirmación: no vuelve a borrador",
+      "path": "/gestor",
+      "title": "Panel del gestor · Donaciones Seguras",
+      "viewportWidth": 375,
+      "scrollWidth": 375,
+      "height": 2144,
+      "focused": "¿Publicar «Botiquín comunitario en Yura»? Aparecerá en el ca",
+      "localStorage": 0,
+      "sessionStorage": 0,
+      "smallTargets": []
+    },
+    {
+      "captura": "10-publicado.png",
+      "nota": "Publicado: ya aparece en el catálogo y acepta donaciones",
+      "path": "/gestor",
+      "title": "Panel del gestor · Donaciones Seguras",
+      "viewportWidth": 375,
+      "scrollWidth": 375,
+      "height": 2012,
+      "focused": "Proyecto publicado: ya aparece en el catálogo y acepta donac",
+      "localStorage": 0,
+      "sessionStorage": 0,
+      "smallTargets": []
+    },
+    {
+      "captura": "11-proyecto-en-catalogo.png",
+      "nota": "El proyecto publicado tiene detalle público y botón para donar oculto al gestor",
+      "path": "/proyectos/27ebdecb-e11a-4b5e-9dd7-b6c73c4a7671",
+      "title": "Botiquín comunitario en Yura · Donaciones Seguras",
+      "viewportWidth": 375,
+      "scrollWidth": 375,
+      "height": 812,
+      "focused": "Botiquín comunitario en Yura",
+      "localStorage": 0,
+      "sessionStorage": 0,
+      "smallTargets": []
+    }
+  ],
+  "apiRequests": [
+    {
+      "method": "POST",
+      "url": "<api-local>/v1/projects",
+      "authorization": "Bearer access-local…",
+      "idempotencyKey": null,
+      "body": "{\"title\":\"Botiquín comunitario en Yura\",\"description\":\"Medicinas básicas y primeros auxilios para tres postas de salud del distrito de Yura.\",\"goalAmountCents\":1200000}"
+    },
+    {
+      "method": "POST",
+      "url": "<api-local>/v1/projects/27ebdecb-e11a-4b5e-9dd7-b6c73c4a7671/publish",
+      "authorization": "Bearer access-local…",
+      "idempotencyKey": null,
+      "body": null
+    },
+    {
+      "method": "GET",
+      "url": "<api-local>/v1/projects/27ebdecb-e11a-4b5e-9dd7-b6c73c4a7671",
+      "authorization": "Bearer access-local…",
+      "idempotencyKey": null,
+      "body": null
+    }
+  ]
+}
