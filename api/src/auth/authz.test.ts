@@ -18,6 +18,8 @@ function createMockAuthContext(overrides: Partial<AuthContext>): AuthContext {
     roles: overrides.roles ?? ["DONANTE"],
     scopes: overrides.scopes ?? ["api/donations.*"],
     tokenUse: overrides.tokenUse ?? "access",
+    amr: overrides.amr ?? ["pwd"],
+    mfaVerified: overrides.mfaVerified ?? false,
     rawClaims: overrides.rawClaims ?? { sub: "sub-default-1234", token_use: "access" },
   };
 }

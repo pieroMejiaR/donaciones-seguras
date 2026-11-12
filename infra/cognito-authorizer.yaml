@@ -24,6 +24,12 @@ Parameters:
     Default: "http://localhost:5173,http://localhost:5173/logout"
     Description: URLs de redireccion tras logout
 
+  DomainPrefix:
+    Type: String
+    Default: donaciones-seguras
+    AllowedPattern: "^(?!.*(aws|amazon|cognito))[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+    Description: Prefijo del dominio de Cognito (https://PREFIJO.auth.REGION.amazoncognito.com). Es unico en la region y no puede contener aws, amazon ni cognito.
+
 Resources:
   # ============================================================================
   # 1. AWS Cognito User Pool
@@ -99,6 +105,10 @@ Resources:
         - "api/projects.write"
         - "api/donations.*"
         - "api/audit.read"
+      # Sin proveedor no hay con que iniciar sesion: el login responde "Invalid request".
+      # COGNITO es el directorio de usuarios del propio pool.
+      SupportedIdentityProviders:
+        - COGNITO
       CallbackURLs: !Ref CallbackUrls
       LogoutURLs: !Ref LogoutUrls
       # Limitacion de tiempo de vida del Access Token (HU-03 / RNF-HU-02: 15 minutos o menos)
@@ -111,6 +121,28 @@ Resources:
         RefreshToken: days
       PreventUserExistenceErrors: ENABLED
       EnableTokenRevocation: true
+
+  # ============================================================================
+  # 3b. Dominio y estilo del managed login
+  # El dominio da los endpoints /oauth2/authorize, /oauth2/token, /oauth2/revoke y /logout
+  # que usa la SPA (Authorization Code con PKCE). Con managed login (version 2) hace falta
+  # un estilo: sin el, la pagina de inicio de sesion responde "Login pages unavailable".
+  # Se usa el estilo que trae Cognito por defecto.
+  # ============================================================================
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref DomainPrefix
+      UserPoolId: !Ref UserPool
+      ManagedLoginVersion: 2
+
+  ManagedLoginStyle:
+    Type: AWS::Cognito::ManagedLoginBranding
+    DependsOn: UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientId: !Ref UserPoolClient
+      UseCognitoProvidedValues: true
 
   # ============================================================================
   # 4. Cognito User Pool Groups (RBAC)
@@ -182,3 +214,9 @@ Outputs:
     Value: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
     Export:
       Name: !Sub "${AWS::StackName}-CognitoIssuerUrl"
+
+  CognitoDomainUrl:
+    Description: URL base del dominio de Cognito (managed login), sin barra final. Va en VITE_OIDC_DOMAIN de la SPA
+    Value: !Sub "https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com"
+    Export:
+      Name: !Sub "${AWS::StackName}-CognitoDomainUrl"

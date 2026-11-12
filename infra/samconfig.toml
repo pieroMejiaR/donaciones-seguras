@@ -38,10 +38,30 @@ stack_name = "donaciones-cognito"
 template_file = "cognito-authorizer.yaml"
 resolve_s3 = true
 confirm_changeset = true
-parameter_overrides = "Environment=academic"
+# Las URL de la SPA publicada (CloudFront) se suman a las de localhost, que usa el desarrollo local.
+# CallbackUrls necesita /callback; LogoutUrls, el origen sin barra final, que es lo que envia la SPA.
+parameter_overrides = [
+  "Environment=academic",
+  "CallbackUrls=http://localhost:5173,http://localhost:5173/callback,https://d2kgpnaifzb84g.cloudfront.net/callback",
+  "LogoutUrls=http://localhost:5173,http://localhost:5173/logout,https://d2kgpnaifzb84g.cloudfront.net",
+]
 
 [cognito.delete.parameters]
 stack_name = "donaciones-cognito"
+
+# CloudTrail de la cuenta (cloudtrail.yaml). Se despliega una vez, lo hace Piero:
+#   sam deploy --config-env cloudtrail
+[cloudtrail.global.parameters]
+region = "us-east-2"
+
+[cloudtrail.deploy.parameters]
+stack_name = "donaciones-cloudtrail"
+template_file = "cloudtrail.yaml"
+resolve_s3 = true
+confirm_changeset = true
+
+[cloudtrail.delete.parameters]
+stack_name = "donaciones-cloudtrail"
 
 # Publicacion de la SPA (frontend.yaml): S3 privado, CloudFront, OAC y cabeceras de seguridad.
 # Se despliega una vez, despues del stack del API. ApiUrl se pasa en la linea de comandos:

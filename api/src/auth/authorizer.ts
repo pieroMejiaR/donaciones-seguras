@@ -3,6 +3,13 @@ import { ForbiddenError, UnauthorizedError } from "./errors.js";
 import type { AppScope, AuthContext, CognitoJwtPayload, UserRole } from "./types.js";
 
 const VALID_ROLES: ReadonlySet<UserRole> = new Set<UserRole>(["DONANTE", "GESTOR", "AUDITOR"]);
+const MFA_AMR_METHODS: ReadonlySet<string> = new Set([
+  "mfa",
+  "sw_token",
+  "totp",
+  "otp",
+  "software_token_mfa",
+]);
 
 /**
  * Decodifica de forma segura la seccion payload de un JWT (base64url).
@@ -32,29 +39,46 @@ export function decodeJwtPayload(token: string): CognitoJwtPayload {
  * Normaliza los grupos de Cognito en un array de roles validos del sistema.
  */
 function extractRolesFromClaims(claims: CognitoJwtPayload): UserRole[] {
-  return parseGroups(claims["cognito:groups"] as unknown).filter((group): group is UserRole =>
+  return parseClaimList(claims["cognito:groups"] as unknown).filter((group): group is UserRole =>
     VALID_ROLES.has(group as UserRole),
   );
 }
 
 /**
  * El JWT authorizer de API Gateway HTTP API entrega cada claim como string: un claim de tipo
- * arreglo como cognito:groups llega como "[GESTOR DONANTE]". Al decodificar el token
- * directamente llega como arreglo. Se aceptan ambas formas.
+ * arreglo como cognito:groups o amr llega como "[GESTOR DONANTE]" o "[pwd sw_token]".
+ * Al decodificar el token directamente llega como arreglo. Se aceptan ambas formas.
  */
-function parseGroups(raw: unknown): string[] {
+function parseClaimList(raw: unknown): string[] {
   if (Array.isArray(raw)) {
-    return raw.filter((group): group is string => typeof group === "string");
+    return raw.filter((item): item is string => typeof item === "string");
   }
 
   if (typeof raw === "string") {
     const trimmed = raw.trim();
     const inner =
       trimmed.startsWith("[") && trimmed.endsWith("]") ? trimmed.slice(1, -1) : trimmed;
-    return inner.split(/[\s,]+/).filter((group) => group.length > 0);
+    return inner.split(/[\s,]+/).filter((item) => item.length > 0);
   }
 
   return [];
+}
+
+function toEpochSeconds(raw: unknown): number | undefined {
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return raw;
+  }
+  if (typeof raw === "string" && /^\d+$/.test(raw.trim())) {
+    return Number(raw.trim());
+  }
+  return undefined;
+}
+
+function isMfaVerified(claims: CognitoJwtPayload, amr: string[]): boolean {
+  if (claims.mfa_verified === true || claims.mfa_verified === "true") {
+    return true;
+  }
+  return amr.some((method) => MFA_AMR_METHODS.has(method.toLowerCase()));
 }
 
 /**
@@ -145,9 +169,11 @@ export function extractAuthContext(event: APIGatewayProxyEventV2): AuthContext {
   }
 
   // Verificacion de tiempo de expiracion si esta presente en claims
-  if (typeof claims.exp === "number") {
+  const exp = toEpochSeconds(claims.exp);
+  const iat = toEpochSeconds(claims.iat);
+  if (exp !== undefined) {
     const currentEpoch = Math.floor(Date.now() / 1000);
-    if (currentEpoch >= claims.exp) {
+    if (currentEpoch >= exp) {
       throw new UnauthorizedError("TOKEN_EXPIRED", "El token ha expirado");
     }
   }
@@ -167,6 +193,8 @@ export function extractAuthContext(event: APIGatewayProxyEventV2): AuthContext {
 
   const roles = extractRolesFromClaims(claims);
   const scopes = extractScopes(claims, authorizerScopes);
+  const amr = parseClaimList(claims.amr as unknown);
+  const mfaVerified = isMfaVerified(claims, amr);
 
   return {
     sub,
@@ -174,8 +202,36 @@ export function extractAuthContext(event: APIGatewayProxyEventV2): AuthContext {
     roles,
     scopes,
     tokenUse,
+    amr,
+    mfaVerified,
+    iss: typeof claims.iss === "string" ? claims.iss : undefined,
+    clientId: typeof claims.client_id === "string" ? claims.client_id : undefined,
+    iat,
+    exp,
     rawClaims: claims,
   };
+}
+
+/**
+ * Validacion explicita de emisor (iss) y client_id contra la configuracion esperada (RNF-HU-02).
+ */
+export function validateTokenOrigin(
+  ctx: AuthContext,
+  expected: { issuer?: string; clientId?: string },
+): void {
+  if (expected.issuer && ctx.iss !== expected.issuer) {
+    throw new UnauthorizedError(
+      "INVALID_ISSUER",
+      "El emisor (iss) del token no corresponde al User Pool configurado",
+    );
+  }
+
+  if (expected.clientId && ctx.clientId !== expected.clientId) {
+    throw new UnauthorizedError(
+      "INVALID_CLIENT_ID",
+      "El client_id del token no corresponde al App Client autorizado",
+    );
+  }
 }
 
 /**
