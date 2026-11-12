@@ -10,7 +10,7 @@ Prototipo académico de una plataforma de donaciones con enfoque Zero Trust: una
 | --- | --- |
 | `web/` | SPA con React y Vite |
 | `api/` | Funciones Lambda en TypeScript |
-| `infra/` | Plantillas SAM: `template.yaml` (API, Lambdas y DynamoDB), `cognito-authorizer.yaml` (identidad) y `cloudtrail.yaml` (auditoría de la cuenta) |
+| `infra/` | Plantillas SAM: `template.yaml` (API, Lambdas y DynamoDB), `cognito-authorizer.yaml` (identidad), `cloudtrail.yaml` (auditoría de la cuenta) y `frontend.yaml` (publicación de la SPA) |
 | `docs/` | Modelo de amenazas, contrato OpenAPI y demás documentos |
 | `evidence/` | Evidencia sanitizada de las pruebas |
 | `.github/` | CI y plantilla de pull request |
