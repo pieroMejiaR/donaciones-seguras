@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import { LoadError } from "../components/LoadError";
 import { PageHeading } from "../components/PageHeading";
+import { SimulationActions } from "../donations/SimulationActions";
 import { SimulationNotice } from "../donations/SimulationNotice";
 import { useMyDonations } from "../donations/queries";
 import {
@@ -51,6 +52,7 @@ function DonationCard({ donation }: { donation: Donation }) {
           <dd className="font-semibold">{formatPEN(donation.amountCents)}</dd>
         </div>
       </dl>
+      <SimulationActions donation={donation} />
     </article>
   );
 }

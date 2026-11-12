@@ -5,6 +5,7 @@ import { Link, useLocation, useParams } from "react-router";
 import { useAuth } from "../auth/authContext";
 import { LoadError } from "../components/LoadError";
 import { PageHeading } from "../components/PageHeading";
+import { SimulationActions } from "../donations/SimulationActions";
 import { SimulationNotice } from "../donations/SimulationNotice";
 import { createIdempotencyTracker } from "../donations/idempotency";
 import { createDonationErrorMessage, useCreateDonation } from "../donations/queries";
@@ -34,6 +35,8 @@ function DonationReceipt({
   onAnother: () => void;
 }) {
   const headingRef = useRef<HTMLHeadingElement>(null);
+  // HU-06: el estado mostrado se actualiza con la respuesta de la simulación.
+  const [current, setCurrent] = useState(donation);
 
   // El formulario desaparece: el foco pasa al resultado para que se anuncie (WCAG 2.4.3).
   useEffect(() => {
@@ -59,7 +62,7 @@ function DonationReceipt({
         </div>
         <div>
           <dt className="text-sm text-muted">Estado</dt>
-          <dd className="font-semibold">{DONATION_STATUS_LABELS[donation.status]}</dd>
+          <dd className="font-semibold">{DONATION_STATUS_LABELS[current.status]}</dd>
         </div>
         <div>
           <dt className="text-sm text-muted">Registrada el</dt>
@@ -67,6 +70,7 @@ function DonationReceipt({
         </div>
       </dl>
       <SimulationNotice />
+      <SimulationActions donation={current} onSimulated={setCurrent} />
       <div className="flex flex-wrap gap-3">
         <Link to="/mis-donaciones" className="btn btn-primary">
           Ver mis donaciones

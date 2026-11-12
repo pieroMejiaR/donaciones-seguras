@@ -1,13 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatPEN } from "../lib/money";
+import { projectKeys } from "../projects/queries";
 import { ApiError } from "../services/apiClient";
 import { useApiClient } from "../services/apiClientContext";
+import { apiErrorMessage } from "../services/errorMessages";
 import type { DonationPayload } from "./idempotency";
 import {
   donationListSchema,
   donationSchema,
   MAX_DONATION_CENTS,
   MIN_DONATION_CENTS,
+  type Donation,
+  type DonationStatus,
 } from "./schemas";
 
 export const donationKeys = {
@@ -51,6 +55,61 @@ export function useCreateDonation() {
         schema: donationSchema,
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: donationKeys.mine }),
+  });
+}
+
+export type SimulationOutcome = Exclude<DonationStatus, "PENDIENTE_SIMULACION">;
+
+/**
+ * HU-06: pasa una donación propia de pendiente a un estado terminal. El API comprueba que sea
+ * del `sub` del token y que siga pendiente; la SPA no decide nada (CA-06.1, CA-06.2). Al
+ * confirmarse cambia el acumulado del proyecto, así que se refrescan catálogo, detalle e
+ * indicadores.
+ */
+export function useSimulateDonation() {
+  const api = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ donationId, outcome }: { donationId: string; outcome: SimulationOutcome }) =>
+      api.request(`/v1/donations/${encodeURIComponent(donationId)}/simulate`, {
+        method: "POST",
+        json: { outcome },
+        schema: donationSchema,
+      }),
+    onSuccess: (donation) => {
+      queryClient.setQueryData<Donation[]>(donationKeys.mine, (items) =>
+        items?.map((item) => (item.donationId === donation.donationId ? donation : item)),
+      );
+      void queryClient.invalidateQueries({ queryKey: donationKeys.mine });
+      void queryClient.invalidateQueries({ queryKey: projectKeys.all });
+    },
+    onError: (error) => {
+      // Otra pestaña o solicitud ya la resolvió: se trae el estado real.
+      if (error instanceof ApiError && error.code === "DONATION_ALREADY_FINALIZED") {
+        void queryClient.invalidateQueries({ queryKey: donationKeys.mine });
+      }
+    },
+  });
+}
+
+export function simulateErrorMessage(error: unknown): string {
+  return apiErrorMessage(error, "simular la donación", ({ status, code }) => {
+    if (code === "DONATION_ALREADY_FINALIZED") {
+      return "Esta donación ya tenía un resultado de simulación; no se puede cambiar.";
+    }
+    if (code === "DONATION_SIMULATION_IN_PROGRESS") {
+      return "Hay otra operación en curso sobre este proyecto. Espera unos segundos y vuelve a intentarlo.";
+    }
+    if (status === 404 && code === "NOT_FOUND") {
+      return "La simulación solo está disponible en el entorno académico.";
+    }
+    if (status === 404) {
+      return "No encontramos esta donación en tu cuenta.";
+    }
+    if (status === 0 || status >= 500) {
+      return "No se pudo completar la simulación. Puedes reintentar: una donación solo se cuenta una vez.";
+    }
+    return undefined;
   });
 }
 
