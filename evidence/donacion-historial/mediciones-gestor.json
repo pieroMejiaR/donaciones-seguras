@@ -1,0 +1,65 @@
+{
+  "measurements": [
+    {
+      "captura": "06-gestor-403.png",
+      "nota": "GESTOR que entra por URL: la SPA muestra 403 y no llama al API de donaciones",
+      "path": "/403",
+      "title": "No tienes acceso a esta sección · Donaciones Seguras",
+      "viewportWidth": 375,
+      "scrollWidth": 375,
+      "height": 812,
+      "focused": "No tienes acceso a esta sección",
+      "localStorage": 0,
+      "sessionStorage": 0,
+      "smallTargets": []
+    },
+    {
+      "captura": "07-gestor-detalle-sin-boton.png",
+      "nota": "GESTOR con sesión: el detalle no ofrece donar",
+      "path": "/proyectos/6f1c2b8e-3a4d-4e5f-9a0b-000000000001",
+      "title": "Comedor comunitario Puentes · Donaciones Seguras",
+      "viewportWidth": 375,
+      "scrollWidth": 375,
+      "height": 812,
+      "focused": "Comedor comunitario Puentes",
+      "localStorage": 0,
+      "sessionStorage": 0,
+      "smallTargets": []
+    },
+    {
+      "captura": null,
+      "nota": "GESTOR en el detalle",
+      "botonDonarVisible": false
+    }
+  ],
+  "apiRequests": [
+    {
+      "method": "GET",
+      "url": "<api-local>/v1/projects/6f1c2b8e-3a4d-4e5f-9a0b-000000000001",
+      "authorization": null,
+      "idempotencyKey": null,
+      "body": null
+    },
+    {
+      "method": "GET",
+      "url": "<api-local>/v1/stats",
+      "authorization": "Bearer access-local…",
+      "idempotencyKey": null,
+      "body": null
+    },
+    {
+      "method": "GET",
+      "url": "<api-local>/v1/projects",
+      "authorization": "Bearer access-local…",
+      "idempotencyKey": null,
+      "body": null
+    },
+    {
+      "method": "GET",
+      "url": "<api-local>/v1/projects/6f1c2b8e-3a4d-4e5f-9a0b-000000000001",
+      "authorization": "Bearer access-local…",
+      "idempotencyKey": null,
+      "body": null
+    }
+  ]
+}

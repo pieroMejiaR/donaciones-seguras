@@ -8,7 +8,7 @@ import {
   axeViolations,
   makeUser,
   renderApp,
-  stubCognito,
+  stubNetwork,
   stubLocation,
   testEnv,
   TOKENS,
@@ -92,7 +92,7 @@ describe("RNF-HU-06: estructura accesible", () => {
 
 describe("guards de ruta (solo experiencia de uso)", () => {
   it("HU-03: sin sesión, una ruta protegida redirige a Cognito conservando el destino", async () => {
-    stubCognito();
+    stubNetwork();
     const { assign } = stubLocation();
     await renderApp("/mis-donaciones?pagina=2");
 
@@ -109,7 +109,7 @@ describe("guards de ruta (solo experiencia de uso)", () => {
   });
 
   it("en StrictMode redirige una sola vez", async () => {
-    stubCognito();
+    stubNetwork();
     const { assign } = stubLocation();
     const services = createAppServices(testEnv);
     const signinRedirect = vi.spyOn(services.userManager, "signinRedirect");
@@ -153,7 +153,7 @@ describe("guards de ruta (solo experiencia de uso)", () => {
   });
 
   it("un visitante navega por las páginas públicas sin ir a Cognito", async () => {
-    stubCognito();
+    stubNetwork();
     const { assign } = stubLocation();
     await renderApp("/");
     await heading(/Proyectos sociales/);
@@ -164,7 +164,7 @@ describe("guards de ruta (solo experiencia de uso)", () => {
 
 describe("sesión en la interfaz", () => {
   it("HU-03: el botón de inicio de sesión redirige a Cognito", async () => {
-    stubCognito();
+    stubNetwork();
     const { assign } = stubLocation();
     const user = userEvent.setup();
     await renderApp("/");
@@ -176,7 +176,7 @@ describe("sesión en la interfaz", () => {
   });
 
   it("muestra un aviso, sin bucle de redirecciones, si Cognito no responde", async () => {
-    stubCognito({ discoveryFails: true });
+    stubNetwork({ discoveryFails: true });
     const { assign } = stubLocation();
     await renderApp("/mis-donaciones");
 
@@ -188,7 +188,7 @@ describe("sesión en la interfaz", () => {
   });
 
   it("reintentar tras un fallo inicia un solo flujo aunque el guard se reactive", async () => {
-    stubCognito({ discoveryFails: true });
+    stubNetwork({ discoveryFails: true });
     stubLocation();
     const user = userEvent.setup();
     const { userManager } = await renderApp("/mis-donaciones");
@@ -202,7 +202,7 @@ describe("sesión en la interfaz", () => {
   });
 
   it("CA-03.3: cerrar sesión revoca, limpia la caché y no vuelve a iniciar el login", async () => {
-    const cognito = stubCognito();
+    const cognito = stubNetwork();
     const { assign } = stubLocation();
     const user = userEvent.setup();
     const { userManager, clearCache } = await renderApp("/mis-donaciones", {
@@ -223,7 +223,7 @@ describe("sesión en la interfaz", () => {
 
   it("si la sesión expira avisa, limpia la caché y deja al usuario iniciar sesión", async () => {
     const { assign } = stubLocation();
-    stubCognito();
+    stubNetwork();
     const { userManager, clearCache } = await renderApp("/mis-donaciones", {
       user: makeUser(["DONANTE"]),
     });
@@ -259,7 +259,7 @@ describe("CallbackPage", () => {
   });
 
   it("HU-03: un callback válido inicia sesión y vuelve a la ruta original", async () => {
-    stubCognito({ groups: ["DONANTE"] });
+    stubNetwork({ groups: ["DONANTE"] });
     const { assign } = stubLocation();
     const services = createAppServices(testEnv);
     void services.userManager.signinRedirect({ state: { returnTo: "/mis-donaciones" } });

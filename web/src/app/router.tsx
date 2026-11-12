@@ -6,9 +6,12 @@ import type { UserRole } from "../auth/session";
 import { Layout } from "../components/Layout";
 import { CallbackPage } from "../pages/CallbackPage";
 import { ForbiddenPage } from "../pages/ForbiddenPage";
-import { HomePage } from "../pages/HomePage";
+import { CatalogPage } from "../pages/CatalogPage";
+import { DonatePage } from "../pages/DonatePage";
+import { MyDonationsPage } from "../pages/MyDonationsPage";
 import { NotFoundPage } from "../pages/NotFoundPage";
 import { PlaceholderPage } from "../pages/PlaceholderPage";
+import { ProjectDetailPage } from "../pages/ProjectDetailPage";
 import { RouteErrorPage } from "../pages/RouteErrorPage";
 
 function protectedPage(role: UserRole, page: ReactNode) {
@@ -24,12 +27,17 @@ export const routes: RouteObject[] = [
     element: <Layout />,
     errorElement: <RouteErrorPage />,
     children: [
-      { index: true, element: <HomePage /> },
+      { index: true, element: <CatalogPage /> },
+      { path: "proyectos/:projectId", element: <ProjectDetailPage /> },
+      {
+        path: "proyectos/:projectId/donar",
+        element: protectedPage("DONANTE", <DonatePage />),
+      },
       { path: "callback", element: <CallbackPage /> },
       { path: "403", element: <ForbiddenPage /> },
       {
         path: "mis-donaciones",
-        element: protectedPage("DONANTE", <PlaceholderPage title="Mis donaciones" />),
+        element: protectedPage("DONANTE", <MyDonationsPage />),
       },
       {
         path: "gestor",

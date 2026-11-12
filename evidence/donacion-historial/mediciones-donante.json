@@ -1,0 +1,99 @@
+{
+  "measurements": [
+    {
+      "captura": "01-detalle-boton-donar.png",
+      "nota": "Visitante sin sesión: el detalle ofrece donar",
+      "path": "/proyectos/6f1c2b8e-3a4d-4e5f-9a0b-000000000001",
+      "title": "Comedor comunitario Puentes · Donaciones Seguras",
+      "viewportWidth": 375,
+      "scrollWidth": 375,
+      "height": 900,
+      "focused": "Saltar al contenido principalDonaciones SegurasIniciar sesió",
+      "localStorage": 0,
+      "sessionStorage": 0,
+      "smallTargets": []
+    },
+    {
+      "captura": "02-formulario.png",
+      "nota": "Tras el login (simulado), el formulario de donación",
+      "path": "/proyectos/6f1c2b8e-3a4d-4e5f-9a0b-000000000001/donar",
+      "title": "Donar a Comedor comunitario Puentes · Donaciones Seguras",
+      "viewportWidth": 375,
+      "scrollWidth": 375,
+      "height": 812,
+      "focused": "Donar a Comedor comunitario Puentes",
+      "localStorage": 0,
+      "sessionStorage": 0,
+      "smallTargets": []
+    },
+    {
+      "captura": "03-error-monto.png",
+      "nota": "Monto 0: error asociado (aria-describedby=\"monto-ayuda monto-error\") y foco en el campo",
+      "path": "/proyectos/6f1c2b8e-3a4d-4e5f-9a0b-000000000001/donar",
+      "title": "Donar a Comedor comunitario Puentes · Donaciones Seguras",
+      "viewportWidth": 375,
+      "scrollWidth": 375,
+      "height": 824,
+      "focused": "monto",
+      "localStorage": 0,
+      "sessionStorage": 0,
+      "smallTargets": []
+    },
+    {
+      "captura": "04-resultado.png",
+      "nota": "Intención registrada: pendiente y rótulo de simulación",
+      "path": "/proyectos/6f1c2b8e-3a4d-4e5f-9a0b-000000000001/donar",
+      "title": "Donar a Comedor comunitario Puentes · Donaciones Seguras",
+      "viewportWidth": 375,
+      "scrollWidth": 375,
+      "height": 938,
+      "focused": "donacion-registrada",
+      "localStorage": 0,
+      "sessionStorage": 0,
+      "smallTargets": []
+    },
+    {
+      "captura": "05-historial.png",
+      "nota": "Historial propio con la donación recién registrada",
+      "path": "/mis-donaciones",
+      "title": "Mis donaciones · Donaciones Seguras",
+      "viewportWidth": 375,
+      "scrollWidth": 375,
+      "height": 1178,
+      "focused": "Mis donaciones",
+      "localStorage": 0,
+      "sessionStorage": 0,
+      "smallTargets": []
+    }
+  ],
+  "apiRequests": [
+    {
+      "method": "GET",
+      "url": "<api-local>/v1/projects/6f1c2b8e-3a4d-4e5f-9a0b-000000000001",
+      "authorization": null,
+      "idempotencyKey": null,
+      "body": null
+    },
+    {
+      "method": "GET",
+      "url": "<api-local>/v1/projects/6f1c2b8e-3a4d-4e5f-9a0b-000000000001",
+      "authorization": "Bearer access-local…",
+      "idempotencyKey": null,
+      "body": null
+    },
+    {
+      "method": "POST",
+      "url": "<api-local>/v1/donations",
+      "authorization": "Bearer access-local…",
+      "idempotencyKey": "7e97c9b5-102a-4c4d-8fc4-68a9cd378fb4",
+      "body": "{\"projectId\":\"6f1c2b8e-3a4d-4e5f-9a0b-000000000001\",\"amountCents\":2550}"
+    },
+    {
+      "method": "GET",
+      "url": "<api-local>/v1/donations/me",
+      "authorization": "Bearer access-local…",
+      "idempotencyKey": null,
+      "body": null
+    }
+  ]
+}
