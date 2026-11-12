@@ -33,4 +33,4 @@ Respuesta uniforme devuelta ante intento de acceso cruzado:
 }
 ```
 
-**Estado:** superada.
+**Estado:** superada en pruebas unitarias de `authz` (`403 FORBIDDEN_OWNERSHIP`) y en los handlers del backend (`POST /v1/donations/{id}/simulate` responde `404 DONATION_NOT_FOUND` para ocultar existencia de donaciones ajenas, y `GET /v1/donations/me` ignora `?donorSub=`, CA-07.2).

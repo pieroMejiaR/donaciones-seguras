@@ -25,4 +25,6 @@ Pruebas unitarias en Vitest (`api/src/auth/mfa.test.ts`).
   ✓ autoriza a un AUDITOR que completó TOTP MFA (mfa_verified: true)
 ```
 
-**Estado:** superada.
+**Estado:** superada en pruebas unitarias de Vitest (`authz`).
+
+**Pendiente en despliegue vivo:** habilitar la ruta `GET /v1/audit` (extensión opcional HU-10) junto con el enlace del trigger Pre-Token Generation v2.0 en Cognito.
