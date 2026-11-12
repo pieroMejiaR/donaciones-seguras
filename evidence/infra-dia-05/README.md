@@ -48,7 +48,7 @@ Con el bucket vacío (respuesta `403` de S3) ya llegaban las ocho cabeceras. Con
 
 | Cabecera | Valor |
 | --- | --- |
-| `Content-Security-Policy` | `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://<origen-del-api> https://cognito-idp.us-east-2.amazonaws.com https://*.auth.us-east-2.amazoncognito.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests` |
+| `Content-Security-Policy` | `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://<origen-del-api> https://cognito-idp.us-east-2.amazonaws.com https://donaciones-seguras.auth.us-east-2.amazoncognito.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests` |
 | `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` |
 | `X-Content-Type-Options` | `nosniff` |
 | `X-Frame-Options` | `DENY` |
@@ -91,7 +91,7 @@ Para esto se actualizó `SpaOrigin` del stack `donaciones-academic`. El cambio s
 ## Limitaciones
 
 - **TLS mínimo.** Con el certificado por defecto de CloudFront, la política de seguridad queda en `TLSv1` (se leyó `MinimumProtocolVersion` de la distribución). Exigir TLS 1.2 como mínimo requiere un dominio propio y un certificado en ACM, y el proyecto no tiene dominio.
-- **El inicio de sesión no se probó de extremo a extremo.** El sitio de la prueba se compiló con un dominio de Cognito que nunca resuelve (`.invalid`), porque la plantilla de Cognito no define dominio. El pool sí tenía uno creado a mano desde la consola, pero sin estilo de managed login ni proveedor de identidad, así que nadie podía iniciar sesión con él (detalle en `evidence/cognito-dominio/`). La CSP admite por ahora cualquier `https://*.auth.us-east-2.amazoncognito.com`; cuando el dominio quede en la plantilla se pasa el exacto. Además hay que agregar la URL de CloudFront a las URL de callback y de cierre de sesión del app client.
+- **El inicio de sesión no se probó de extremo a extremo.** En la primera publicación la SPA se compiló con un dominio de Cognito provisional que nunca resuelve (`.invalid`) y la CSP admitía cualquier `https://*.auth.us-east-2.amazoncognito.com`, porque el pool no tenía un dominio utilizable (detalle en `evidence/cognito-dominio/`). El 11 de noviembre, con el dominio ya en la plantilla, la SPA se recompiló con el dominio real y la CSP pasó a tomar el dominio exacto de la salida `CognitoDomainUrl`. Desde la SPA publicada, «Iniciar sesión» lleva a la página de login de Cognito con el `redirect_uri` de CloudFront, PKCE S256 y los scopes registrados, y la página responde `200`. No se escribieron credenciales, así que el canje del código por tokens y las llamadas autenticadas siguen sin probar.
 - **Un 403 se convierte en 200.** La regla que devuelve `index.html` ante un 403 o 404 hace que un método no permitido (por ejemplo `POST /`) o un archivo inexistente también respondan `200` con la página. No cambia nada en el bucket: el OAC solo permite `GetObject`.
 - **Sin WAF ni logs de acceso de CloudFront**, por costo. Los eventos de administración quedan en CloudTrail (día 4).
 - **El borrado del stack no se probó.** CloudFront tarda varios minutos en eliminar la distribución y la URL cambiaría. Se prueba en la limpieza final del día 7.

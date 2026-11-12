@@ -119,14 +119,14 @@ La SPA se sirve desde un bucket S3 privado a través de CloudFront (stack `donac
 - La CSP solo deja cargar scripts y estilos del propio origen, y conectar al API y a Cognito. No admite scripts ni estilos en línea: si la SPA los necesitara, se cambia la SPA y no la política.
 - `index.html` y las rutas de la SPA no se guardan en caché; `/assets/*`, que lleva hash en el nombre, se guarda un año. Un 403 o 404 del bucket devuelve `index.html`, para que recargar una ruta de la SPA funcione.
 
-Se despliega una vez, después del stack del API. `ApiUrl` fija en la CSP el origen exacto del API:
+Se despliega una vez, después del stack del API y del de Cognito. `ApiUrl` fija en la CSP el origen exacto del API; el dominio exacto de Cognito lo toma la plantilla de la salida `CognitoDomainUrl` de `donaciones-cognito`:
 
 ```bash
 cd infra
 sam deploy --config-env frontend --parameter-overrides ApiUrl=<salida ApiUrl de donaciones-academic>
 ```
 
-La salida `SiteUrl` es la URL pública. Tiene que estar en `SpaOrigin` del API (ya figura en el perfil `academic` de `samconfig.toml`) y, para el inicio de sesión, en las URL de callback y de cierre de sesión de Cognito. Por ahora la CSP admite cualquier `https://*.auth.us-east-2.amazoncognito.com`; para cerrarla se pasa el dominio exacto con `CognitoDomain=<salida CognitoDomainUrl del stack de Cognito>`.
+La salida `SiteUrl` es la URL pública. Tiene que estar en `SpaOrigin` del API (ya figura en el perfil `academic` de `samconfig.toml`) y, para el inicio de sesión, en las URL de callback y de cierre de sesión de Cognito.
 
 Para publicar o actualizar la SPA se compila con las variables `VITE_*` de `web/.env.example` y se sube el resultado. No hace falta invalidar la caché:
 
