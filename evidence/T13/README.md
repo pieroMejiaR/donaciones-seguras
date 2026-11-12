@@ -35,4 +35,6 @@ Respuesta ante ausencia de TOTP MFA:
 }
 ```
 
-**Estado:** superada.
+**Estado:** superada en pruebas unitarias de Vitest (`authz` y `cognitoMfaTrigger`).
+
+**Pendiente en despliegue vivo:** conectar el trigger Pre-Token Generation v2.0 al User Pool en `infra/cognito-authorizer.yaml` (actualmente `MfaConfiguration: "OPTIONAL"`) y conmutar `createProject` y `publishProject` de `requireRole` a `requireRoleWithMfa` para exigir `mfa_verified` en AWS.
