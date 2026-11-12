@@ -14,6 +14,11 @@ export default defineConfig([
     languageOptions: { globals: globals.browser },
   },
   {
+    // Scripts que se pegan en la consola del navegador para reunir evidencia.
+    files: ["evidence/**/*.js"],
+    languageOptions: { globals: globals.browser },
+  },
+  {
     files: ["api/**/*.ts", "**/*.mjs"],
     languageOptions: { globals: globals.node },
   },

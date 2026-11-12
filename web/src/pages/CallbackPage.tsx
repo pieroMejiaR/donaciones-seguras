@@ -38,7 +38,7 @@ export function CallbackPage() {
       <div className="space-y-4">
         <PageHeading title="No se pudo iniciar sesión" />
         <p role="alert">La respuesta del servicio de identidad no es válida o ya expiró.</p>
-        <Link to="/" className="text-link">
+        <Link to="/" className="text-link inline-flex min-h-11 items-center">
           Volver al inicio
         </Link>
       </div>
