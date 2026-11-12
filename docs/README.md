@@ -7,3 +7,4 @@
 | `cedar/` | Paolo | Esquema y políticas declarativas Cedar para Amazon Verified Permissions (HU-12) |
 | `api.yaml` | Santiago | Contrato OpenAPI 3.1 |
 | `data-model.md` | Santiago | Diseño de claves de las tablas DynamoDB y permisos por función |
+| `informe-backend.md` | Santiago | Sección de backend del informe técnico |

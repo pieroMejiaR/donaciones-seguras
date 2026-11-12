@@ -15,10 +15,10 @@ Las cuatro tablas usan claves genéricas (`pk`, `gsi1pk`, `gsi1sk`). Este docume
 
 - El catálogo y `/stats` hacen `Query` sobre `gsi1` con `gsi1pk = STATUS#PUBLICADO`, sin `Scan` (RNF-HU-05). Además, el código descarta cualquier ítem que no esté `PUBLICADO` antes de responder (CA-01.2).
 - Publicar es un `Update` condicionado a `#status = BORRADOR`, en la misma transacción que su evento de auditoría. Si dos gestores publican a la vez, solo uno lo consigue y el otro recibe 409.
-- `confirmedAmountCents` solo cambia con `ADD` al confirmar una donación (día 5).
+- `confirmedAmountCents` solo cambia con `ADD` al confirmar una donación (ver Donations).
 - No se guarda quién creó el proyecto: ese dato vive en `AuditEvents` con seudónimo.
 
-## Donations (día 4)
+## Donations
 
 | Atributo | Valor |
 | --- | --- |
@@ -29,8 +29,23 @@ Las cuatro tablas usan claves genéricas (`pk`, `gsi1pk`, `gsi1sk`). Este docume
 
 - El historial propio hace `Query` sobre `gsi1` con el `sub` del token: no hay forma de pedir el de otro donante (CA-07.1).
 - Para simular, se lee por `pk` y se compara `donorSub` con el `sub` del token. Si no coincide, la respuesta es 404, igual que si no existiera (CA-07.2).
+- La simulación es un único `TransactWriteItems` con tres operaciones:
+  - el `Update` de la donación, condicionado a `#status = PENDIENTE_SIMULACION AND donorSub = :sub`;
+  - solo si se confirma, `ADD confirmedAmountCents` en el proyecto;
+  - el evento de auditoría.
 
-## Idempotency (día 4)
+  Si llegan 10 confirmaciones a la vez, la condición deja pasar solo a la primera; las demás responden 409 `DONATION_ALREADY_FINALIZED` (CA-06.2, T08). Una rechazada no toca el proyecto (CA-06.3).
+- Si la transacción choca con otra sobre el mismo proyecto (`TransactionConflict`), no se aplica nada. El handler vuelve a leer y reintenta hasta 3 veces; si sigue el choque, responde 409 `DONATION_SIMULATION_IN_PROGRESS`.
+
+### Decisión: acumulado transaccional en lugar de agregación derivada (CA-NF04.2)
+
+El requerimiento admite dos opciones: una operación condicional o transacción, o una agregación derivada consistente. Se eligió la primera:
+
+- **Lectura barata.** El catálogo y `/stats` leen el acumulado ya calculado, sin sumar donaciones en cada consulta (RNF-HU-05).
+- **Una sola fuente de verdad.** El estado de la donación y el acumulado cambian juntos o no cambian. No hay ventana en la que una donación figure como confirmada sin estar sumada.
+- **Costo:** cada confirmación escribe en el ítem del proyecto. Con muchas confirmaciones simultáneas del mismo proyecto aparecen conflictos de transacción, que se reintentan. En el volumen académico no es un problema; a gran escala convendría un contador repartido o la agregación con DynamoDB Streams.
+
+## Idempotency
 
 | Atributo | Valor |
 | --- | --- |
@@ -70,6 +85,7 @@ Esta tabla sirve de insumo para los roles de mínimo privilegio (RNF-HU-03, T10)
 | `createDonation` | Projects | `GetItem`, `ConditionCheckItem` |
 | | Idempotency | `GetItem`, `PutItem` |
 | | Donations, AuditEvents | `PutItem` |
-| `simulateDonation` (día 5) | Donations, Projects | `GetItem`, `UpdateItem` |
+| `simulateDonation` | Donations | `GetItem`, `UpdateItem` |
+| | Projects | `UpdateItem` |
 | | AuditEvents | `PutItem` |
-| `listMyDonations` (día 5) | Donations, índice `gsi1` | `Query` |
+| `listMyDonations` | Donations, índice `gsi1` | `Query` |

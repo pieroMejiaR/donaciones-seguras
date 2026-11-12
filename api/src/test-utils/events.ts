@@ -22,6 +22,7 @@ export const DONANTE = {
 interface EventOptions {
   routeKey: string;
   pathParameters?: Record<string, string>;
+  queryStringParameters?: Record<string, string>;
   body?: unknown;
   /** Cuerpo literal, para probar JSON inválido. */
   rawBody?: string;
@@ -41,6 +42,7 @@ export function apiEvent(options: EventOptions): APIGatewayProxyEventV2 {
     rawQueryString: "",
     headers: { "content-type": "application/json", ...options.headers },
     pathParameters: options.pathParameters,
+    queryStringParameters: options.queryStringParameters,
     body,
     isBase64Encoded: false,
     requestContext: {
