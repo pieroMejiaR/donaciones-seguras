@@ -82,6 +82,17 @@ Región `us-east-2` (Ohio): la cuenta no permite otra.
 
 `template.yaml` importa del stack de Cognito el emisor y el client_id del JWT authorizer, así que `donaciones-cognito` tiene que existir antes. En el stage `dev` no existe `POST /v1/donations/{id}/simulate` (CA-06.1).
 
+### Identidad
+
+El stack `donaciones-cognito` crea el User Pool, el app client público de la SPA, los grupos `DONANTE`, `GESTOR` y `AUDITOR`, y el dominio del managed login. La URL del dominio sale en `CognitoDomainUrl` y va en `VITE_OIDC_DOMAIN` de la SPA. Para que la página de inicio de sesión funcione hacen falta tres cosas, y las tres están en la plantilla: el dominio, un estilo de managed login (sin él la página responde «Login pages unavailable») y `COGNITO` como proveedor del app client (sin él responde «Invalid request»).
+
+Las URL de callback y de cierre de sesión están en el perfil `cognito` de `samconfig.toml`: las de `localhost` para el desarrollo y las de CloudFront para la SPA publicada. `CallbackUrls` lleva la ruta `/callback`; `LogoutUrls`, el origen sin barra final, porque es lo que envía la SPA al cerrar sesión.
+
+```bash
+cd infra
+sam deploy --config-env cognito
+```
+
 ### Desplegar
 
 ```bash
