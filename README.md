@@ -10,7 +10,7 @@ Prototipo académico de una plataforma de donaciones con enfoque Zero Trust: una
 | --- | --- |
 | `web/` | SPA con React y Vite |
 | `api/` | Funciones Lambda en TypeScript |
-| `infra/` | Plantillas SAM: `template.yaml` (API, Lambdas y DynamoDB), `cognito-authorizer.yaml` (identidad) y `cloudtrail.yaml` (auditoría de la cuenta) |
+| `infra/` | Plantillas SAM: `template.yaml` (API, Lambdas y DynamoDB), `cognito-authorizer.yaml` (identidad), `cloudtrail.yaml` (auditoría de la cuenta) y `frontend.yaml` (publicación de la SPA) |
 | `docs/` | Modelo de amenazas, contrato OpenAPI y demás documentos |
 | `evidence/` | Evidencia sanitizada de las pruebas |
 | `.github/` | CI y plantilla de pull request |
@@ -76,6 +76,7 @@ Región `us-east-2` (Ohio): la cuenta no permite otra.
 | Stack | Plantilla | Stage | Quién lo despliega |
 | --- | --- | --- | --- |
 | `donaciones-cognito` | `cognito-authorizer.yaml` | `academic` | Piero, una sola vez; lo comparten todos |
+| `donaciones-frontend` | `frontend.yaml` | no aplica | Piero, una sola vez; sirve la SPA |
 | `donaciones-academic` | `template.yaml` | `academic` | Piero; lo usan la SPA y la demo |
 | `donaciones-cloudtrail` | `cloudtrail.yaml` | no aplica | Piero, una sola vez; es el trail de la cuenta |
 | `donaciones-<nombre>` | `template.yaml` | `dev` | Cada integrante, para sus pruebas |
@@ -108,6 +109,33 @@ sam deploy --stack-name donaciones-<nombre>     # stack personal
 No usar `sam build`: el código ya sale empaquetado de `npm run build`. La URL del API aparece en la salida `ApiUrl` del stack.
 
 Las rutas siguen la matriz de `docs/threat-model.md`. Las de lectura pública no piden token; las demás exigen un access token de Cognito con el scope de la ruta. Mientras un módulo no esté implementado, su ruta responde 501 con `{ code, message, requestId }`.
+
+### Publicar la SPA
+
+La SPA se sirve desde un bucket S3 privado a través de CloudFront (stack `donaciones-frontend`, plantilla `frontend.yaml`):
+
+- Solo CloudFront lee el bucket, con control de acceso al origen (OAC). El bucket no tiene acceso público ni hosting de sitio web.
+- Cada respuesta lleva una política de cabeceras de seguridad: CSP, HSTS de un año, `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy` y las políticas de origen cruzado.
+- La CSP solo deja cargar scripts y estilos del propio origen, y conectar al API y a Cognito. No admite scripts ni estilos en línea: si la SPA los necesitara, se cambia la SPA y no la política.
+- `index.html` y las rutas de la SPA no se guardan en caché; `/assets/*`, que lleva hash en el nombre, se guarda un año. Un 403 o 404 del bucket devuelve `index.html`, para que recargar una ruta de la SPA funcione.
+
+Se despliega una vez, después del stack del API y del de Cognito. `ApiUrl` fija en la CSP el origen exacto del API; el dominio exacto de Cognito lo toma la plantilla de la salida `CognitoDomainUrl` de `donaciones-cognito`:
+
+```bash
+cd infra
+sam deploy --config-env frontend --parameter-overrides ApiUrl=<salida ApiUrl de donaciones-academic>
+```
+
+La salida `SiteUrl` es la URL pública. Tiene que estar en `SpaOrigin` del API (ya figura en el perfil `academic` de `samconfig.toml`) y, para el inicio de sesión, en las URL de callback y de cierre de sesión de Cognito.
+
+Para publicar o actualizar la SPA se compila con las variables `VITE_*` de `web/.env.example` y se sube el resultado. No hace falta invalidar la caché:
+
+```bash
+npm run build -w web
+aws s3 sync web/dist s3://<SiteBucketName> --delete
+```
+
+Para borrar el stack, primero se vacía el bucket (`aws s3 rm s3://<SiteBucketName> --recursive`) y después se ejecuta `sam delete --config-env frontend`. CloudFront tarda varios minutos en eliminar la distribución.
 
 ### Observabilidad
 
