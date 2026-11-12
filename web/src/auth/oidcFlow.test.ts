@@ -4,7 +4,7 @@ import {
   browserStorageDump,
   makeUser,
   ORIGIN,
-  stubCognito,
+  stubNetwork,
   stubLocation,
   testEnv,
   TOKENS,
@@ -28,7 +28,7 @@ function callbackUrlFor(authorizeUrl: URL) {
 
 describe("flujo OIDC contra un Cognito simulado", () => {
   it("CA-03.1: usa Authorization Code con PKCE S256 y nunca el flujo implícito", async () => {
-    stubCognito();
+    stubNetwork();
     const { authorizeUrl } = await startSignin();
 
     expect(authorizeUrl.origin + authorizeUrl.pathname).toBe(
@@ -44,7 +44,7 @@ describe("flujo OIDC contra un Cognito simulado", () => {
   });
 
   it("CA-03.1: canjea el código con el code_verifier, sin secreto de cliente", async () => {
-    const cognito = stubCognito();
+    const cognito = stubNetwork();
     const { userManager, authorizeUrl } = await startSignin();
 
     await completeSignin(userManager, callbackUrlFor(authorizeUrl));
@@ -57,7 +57,7 @@ describe("flujo OIDC contra un Cognito simulado", () => {
   });
 
   it("CA-NF11.1: tras el callback no quedan tokens ni code_verifier en el navegador", async () => {
-    stubCognito({ groups: ["DONANTE"] });
+    stubNetwork({ groups: ["DONANTE"] });
     const { userManager, authorizeUrl } = await startSignin();
 
     expect(window.sessionStorage.length).toBeGreaterThan(0);
@@ -77,7 +77,7 @@ describe("flujo OIDC contra un Cognito simulado", () => {
   });
 
   it("devuelve la ruta original tras el login", async () => {
-    stubCognito();
+    stubNetwork();
     const { userManager, authorizeUrl } = await startSignin("/gestor?filtro=activos");
     await expect(completeSignin(userManager, callbackUrlFor(authorizeUrl))).resolves.toBe(
       "/gestor?filtro=activos",
@@ -85,13 +85,13 @@ describe("flujo OIDC contra un Cognito simulado", () => {
   });
 
   it("descarta un returnTo externo guardado en el state", async () => {
-    stubCognito();
+    stubNetwork();
     const { userManager, authorizeUrl } = await startSignin("https://malicioso.example");
     await expect(completeSignin(userManager, callbackUrlFor(authorizeUrl))).resolves.toBe("/");
   });
 
   it("procesar dos veces el callback canjea el código una sola vez", async () => {
-    const cognito = stubCognito();
+    const cognito = stubNetwork();
     const { userManager, authorizeUrl } = await startSignin();
     const url = callbackUrlFor(authorizeUrl);
 
@@ -101,7 +101,7 @@ describe("flujo OIDC contra un Cognito simulado", () => {
   });
 
   it("rechaza un state desconocido y no crea sesión", async () => {
-    const cognito = stubCognito();
+    const cognito = stubNetwork();
     const { userManager } = await startSignin();
 
     await expect(
@@ -130,7 +130,7 @@ describe("cierre de sesión", () => {
   }
 
   it("CA-03.3: revoca solo el refresh token, borra la memoria y cierra la sesión de Cognito", async () => {
-    const cognito = stubCognito();
+    const cognito = stubNetwork();
     const { assign, userManager } = await signedIn();
 
     await performLogout(userManager, testEnv);
@@ -144,7 +144,7 @@ describe("cierre de sesión", () => {
   });
 
   it("CA-03.3: borra la memoria y sale aunque la revocación falle, sin registrar el token", async () => {
-    stubCognito({ revokeFails: true });
+    stubNetwork({ revokeFails: true });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { assign, userManager } = await signedIn();
 

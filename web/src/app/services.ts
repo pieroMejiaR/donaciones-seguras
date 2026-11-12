@@ -3,7 +3,12 @@ import type { UserManager } from "oidc-client-ts";
 import { createUserManager } from "../auth/oidcConfig";
 import { getValidAccessToken } from "../auth/session";
 import type { Env } from "../config/env";
-import { ApiError, createApiClient, type ApiClient } from "../services/apiClient";
+import {
+  ApiError,
+  createApiClient,
+  INVALID_RESPONSE,
+  type ApiClient,
+} from "../services/apiClient";
 
 export interface AppServices {
   env: Env;
@@ -14,10 +19,16 @@ export interface AppServices {
 
 const MAX_RETRIES = 2;
 
-/** Reintentar un 4xx no cambia el resultado; solo se reintentan errores de red y 5xx. */
-function shouldRetry(failureCount: number, error: unknown) {
-  if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
-    return false;
+/**
+ * Reintentar un 4xx o una respuesta fuera de contrato no cambia el resultado; solo se
+ * reintentan errores de red y 5xx.
+ */
+export function shouldRetry(failureCount: number, error: unknown) {
+  if (error instanceof ApiError) {
+    const clientError = error.status >= 400 && error.status < 500;
+    if (clientError || error.code === INVALID_RESPONSE) {
+      return false;
+    }
   }
   return failureCount < MAX_RETRIES;
 }

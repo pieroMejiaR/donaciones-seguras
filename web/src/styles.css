@@ -11,6 +11,9 @@
   --color-brand-strong: #0b4641;
   --color-danger: #8f1d1d;
   --color-danger-soft: #fdecea;
+  --color-warning: #7a4500;
+  --color-warning-soft: #fff4e0;
+  --color-brand-soft: #e3f1ef;
   --color-focus: #b3400f;
 }
 
@@ -71,6 +74,22 @@
 
   .btn-secondary:hover:not(:disabled) {
     background-color: var(--color-canvas);
+  }
+
+  /* Campo de texto: 44 px de alto y borde con contraste 3:1 (WCAG 1.4.11). */
+  .field-input {
+    min-height: 2.75rem;
+    width: 100%;
+    border: 1px solid var(--color-muted);
+    border-radius: 0.5rem;
+    background-color: var(--color-surface);
+    padding: 0.5rem 0.75rem;
+    font-size: 1rem;
+  }
+
+  .field-input[aria-invalid="true"] {
+    border-width: 2px;
+    border-color: var(--color-danger);
   }
 
   .skip-link {
