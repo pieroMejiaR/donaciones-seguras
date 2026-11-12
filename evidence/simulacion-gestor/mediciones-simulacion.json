@@ -1,0 +1,113 @@
+{
+  "measurements": [
+    {
+      "captura": "01-historial-pendientes.png",
+      "nota": "Historial: las pendientes ofrecen simular; las resueltas no",
+      "path": "/mis-donaciones",
+      "title": "Mis donaciones · Donaciones Seguras",
+      "viewportWidth": 375,
+      "scrollWidth": 375,
+      "height": 1688,
+      "focused": "Mis donaciones",
+      "localStorage": 0,
+      "sessionStorage": 0,
+      "smallTargets": []
+    },
+    {
+      "captura": "02-pedir-confirmacion.png",
+      "nota": "Confirmación previa: el resultado no se puede cambiar",
+      "path": "/mis-donaciones",
+      "title": "Mis donaciones · Donaciones Seguras",
+      "viewportWidth": 375,
+      "scrollWidth": 375,
+      "height": 1716,
+      "focused": "¿Confirmar la donación simulada de S/ 250.00? Sumará al avan",
+      "localStorage": 0,
+      "sessionStorage": 0,
+      "smallTargets": []
+    },
+    {
+      "captura": "03-confirmada.png",
+      "nota": "Confirmada: el estado y el total confirmado se actualizan",
+      "path": "/mis-donaciones",
+      "title": "Mis donaciones · Donaciones Seguras",
+      "viewportWidth": 375,
+      "scrollWidth": 375,
+      "height": 1587,
+      "focused": "Donación confirmada (simulada). Ya suma al avance del proyec",
+      "localStorage": 0,
+      "sessionStorage": 0,
+      "smallTargets": []
+    },
+    {
+      "captura": "04-rechazada.png",
+      "nota": "Rechazada: no suma al total confirmado",
+      "path": "/mis-donaciones",
+      "title": "Mis donaciones · Donaciones Seguras",
+      "viewportWidth": 375,
+      "scrollWidth": 375,
+      "height": 1486,
+      "focused": "Donación rechazada (simulada). No suma al avance del proyect",
+      "localStorage": 0,
+      "sessionStorage": 0,
+      "smallTargets": []
+    },
+    {
+      "captura": "05-avance-actualizado.png",
+      "nota": "Detalle: el recaudado incluye la confirmación (S/ 3,125.50 + S/ 250.00)",
+      "path": "/proyectos/6f1c2b8e-3a4d-4e5f-9a0b-000000000001",
+      "title": "Comedor comunitario Puentes · Donaciones Seguras",
+      "viewportWidth": 375,
+      "scrollWidth": 375,
+      "height": 872,
+      "focused": "Comedor comunitario Puentes",
+      "localStorage": 0,
+      "sessionStorage": 0,
+      "smallTargets": []
+    }
+  ],
+  "apiRequests": [
+    {
+      "method": "GET",
+      "url": "<api-local>/v1/donations/me",
+      "authorization": "Bearer access-local…",
+      "idempotencyKey": null,
+      "body": null
+    },
+    {
+      "method": "POST",
+      "url": "<api-local>/v1/donations/131bdbbb-bd8f-4619-9161-27d9883ef150/simulate",
+      "authorization": "Bearer access-local…",
+      "idempotencyKey": null,
+      "body": "{\"outcome\":\"CONFIRMADA_SIMULADA\"}"
+    },
+    {
+      "method": "GET",
+      "url": "<api-local>/v1/donations/me",
+      "authorization": "Bearer access-local…",
+      "idempotencyKey": null,
+      "body": null
+    },
+    {
+      "method": "POST",
+      "url": "<api-local>/v1/donations/9864b86b-6693-4ad0-8163-cff410832ca1/simulate",
+      "authorization": "Bearer access-local…",
+      "idempotencyKey": null,
+      "body": "{\"outcome\":\"RECHAZADA_SIMULADA\"}"
+    },
+    {
+      "method": "GET",
+      "url": "<api-local>/v1/donations/me",
+      "authorization": "Bearer access-local…",
+      "idempotencyKey": null,
+      "body": null
+    },
+    {
+      "method": "GET",
+      "url": "<api-local>/v1/projects/6f1c2b8e-3a4d-4e5f-9a0b-000000000001",
+      "authorization": "Bearer access-local…",
+      "idempotencyKey": null,
+      "body": null
+    }
+  ]
+}

@@ -14,9 +14,9 @@ const dateTimeFormatter = new Intl.DateTimeFormat("es-PE", {
   timeZone: "America/Lima",
 });
 
-/** Fecha y hora; «a. m.» y «p. m.» no se parten en dos líneas en pantallas angostas. */
+/** Fecha y hora; la hora y su «a. m.» o «p. m.» no se parten en dos líneas en pantallas angostas. */
 export function formatDateTime(isoDate: string): string {
   return dateTimeFormatter
     .format(new Date(isoDate))
-    .replace(/([ap]\.)\s(m\.)/, "$1 $2");
+    .replace(/\s([ap]\.)\s(m\.)/, " $1 $2");
 }

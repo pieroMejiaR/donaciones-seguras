@@ -4,6 +4,8 @@ import { useApiClient } from "../services/apiClientContext";
 import { isProjectId, projectListSchema, projectSchema, statsSchema } from "./schemas";
 
 export const projectKeys = {
+  /** Prefijo de todas las consultas públicas de proyectos. */
+  all: ["projects"] as const,
   list: ["projects", "list"] as const,
   detail: (projectId: string) => ["projects", "detail", projectId] as const,
   stats: ["projects", "stats"] as const,

@@ -8,9 +8,9 @@ import { CallbackPage } from "../pages/CallbackPage";
 import { ForbiddenPage } from "../pages/ForbiddenPage";
 import { CatalogPage } from "../pages/CatalogPage";
 import { DonatePage } from "../pages/DonatePage";
+import { ManagerPage } from "../pages/ManagerPage";
 import { MyDonationsPage } from "../pages/MyDonationsPage";
 import { NotFoundPage } from "../pages/NotFoundPage";
-import { PlaceholderPage } from "../pages/PlaceholderPage";
 import { ProjectDetailPage } from "../pages/ProjectDetailPage";
 import { RouteErrorPage } from "../pages/RouteErrorPage";
 
@@ -41,7 +41,7 @@ export const routes: RouteObject[] = [
       },
       {
         path: "gestor",
-        element: protectedPage("GESTOR", <PlaceholderPage title="Panel del gestor" />),
+        element: protectedPage("GESTOR", <ManagerPage />),
       },
       { path: "*", element: <NotFoundPage /> },
     ],

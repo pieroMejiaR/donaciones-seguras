@@ -110,7 +110,15 @@ export function makeDonation(overrides: Partial<FakeDonation> = {}): FakeDonatio
 /** Falla simulada de una ruta: caída de red o una respuesta con estado y cuerpo propios. */
 export type FakeFailure = "network" | { status: number; body?: unknown };
 
-type ApiRoute = "projects" | "detail" | "stats" | "createDonation" | "myDonations";
+type ApiRoute =
+  | "projects"
+  | "detail"
+  | "stats"
+  | "createDonation"
+  | "myDonations"
+  | "simulate"
+  | "createProject"
+  | "publish";
 
 export interface NetworkOptions {
   groups?: string[];
@@ -163,6 +171,8 @@ export function stubNetwork(options: NetworkOptions = {}) {
     idempotency: new Map<string, { payload: string; response: FakeDonation }>(),
   };
   const requests: RecordedRequest[] = [];
+  /** Rutas en pausa: la respuesta espera a que la prueba la libere, como una red lenta. */
+  const paused = new Map<ApiRoute, Promise<void>>();
   const api = testEnv.apiBaseUrl;
 
   const visible = () =>
@@ -205,6 +215,105 @@ export function stubNetwork(options: NetworkOptions = {}) {
       return options.revokeFails
         ? Response.json({ error: "invalid_request" }, { status: 400 })
         : new Response(null, { status: 200 });
+    }
+
+    const authorized = headers.get("Authorization") === `Bearer ${TOKENS.access}`;
+
+    if (url === `${api}/v1/projects` && method === "POST") {
+      await paused.get("createProject");
+      const failure = state.failures.createProject;
+      if (failure) {
+        return respondWith(failure);
+      }
+      if (!authorized) {
+        return apiError(401, "UNAUTHORIZED");
+      }
+      const input = JSON.parse(rawBody ?? "null") as Record<string, unknown> | null;
+      const fields = Object.keys(input ?? {}).sort().join(",");
+      const { title, description, goalAmountCents } = input ?? {};
+      if (
+        fields !== "description,goalAmountCents,title" ||
+        typeof title !== "string" ||
+        title.trim().length < 3 ||
+        title.trim().length > 120 ||
+        typeof description !== "string" ||
+        description.trim().length < 10 ||
+        description.trim().length > 2000 ||
+        typeof goalAmountCents !== "number" ||
+        !Number.isInteger(goalAmountCents) ||
+        goalAmountCents <= 0 ||
+        goalAmountCents > 100_000_000
+      ) {
+        return apiError(400, "VALIDATION_ERROR");
+      }
+      const now = new Date().toISOString();
+      const project = makeProject({
+        title: title.trim(),
+        description: description.trim(),
+        goalAmountCents,
+        confirmedAmountCents: 0,
+        status: "BORRADOR",
+        createdAt: now,
+        updatedAt: now,
+        publishedAt: undefined,
+      });
+      delete project.publishedAt;
+      state.projects.push(project);
+      return Response.json(project, { status: 201 });
+    }
+    const publishMatch = new RegExp(`^${api}/v1/projects/([^/]+)/publish$`).exec(url);
+    if (publishMatch && method === "POST") {
+      const failure = state.failures.publish;
+      if (failure) {
+        return respondWith(failure);
+      }
+      if (!authorized) {
+        return apiError(401, "UNAUTHORIZED");
+      }
+      const project = state.projects.find(
+        (p) => p.projectId === decodeURIComponent(publishMatch[1] ?? ""),
+      );
+      if (!project) {
+        return apiError(404, "PROJECT_NOT_FOUND");
+      }
+      if (project.status === "PUBLICADO") {
+        return apiError(409, "PROJECT_ALREADY_PUBLISHED");
+      }
+      const now = new Date().toISOString();
+      Object.assign(project, { status: "PUBLICADO", publishedAt: now, updatedAt: now });
+      return Response.json(project);
+    }
+    const simulateMatch = new RegExp(`^${api}/v1/donations/([^/]+)/simulate$`).exec(url);
+    if (simulateMatch && method === "POST") {
+      await paused.get("simulate");
+      const failure = state.failures.simulate;
+      if (failure) {
+        return respondWith(failure);
+      }
+      if (!authorized) {
+        return apiError(401, "UNAUTHORIZED");
+      }
+      const { outcome } = (JSON.parse(rawBody ?? "null") ?? {}) as { outcome?: unknown };
+      if (outcome !== "CONFIRMADA_SIMULADA" && outcome !== "RECHAZADA_SIMULADA") {
+        return apiError(400, "VALIDATION_ERROR");
+      }
+      const donation = state.donations.find(
+        (d) => d.donationId === decodeURIComponent(simulateMatch[1] ?? ""),
+      );
+      if (!donation) {
+        return apiError(404, "DONATION_NOT_FOUND");
+      }
+      if (donation.status !== "PENDIENTE_SIMULACION") {
+        return apiError(409, "DONATION_ALREADY_FINALIZED");
+      }
+      // Como el backend: solo la primera transición cambia el acumulado (CA-06.2, CA-06.3).
+      donation.status = outcome;
+      donation.updatedAt = new Date().toISOString();
+      const project = state.projects.find((p) => p.projectId === donation.projectId);
+      if (project && outcome === "CONFIRMADA_SIMULADA") {
+        project.confirmedAmountCents += donation.amountCents;
+      }
+      return Response.json(donation);
     }
 
     if (url === `${api}/v1/projects`) {
@@ -300,7 +409,18 @@ export function stubNetwork(options: NetworkOptions = {}) {
     requestsTo: (path: string) => requests.filter(({ url }) => url.endsWith(path)),
     /** Donaciones que el API simulado tiene guardadas. */
     donations: () => state.donations,
+    /** Proyectos que el API simulado tiene guardados, incluidos los borradores. */
+    projects: () => state.projects,
     apiRequests: () => requests.filter(({ url }) => url.startsWith(api)),
+    /** Retiene las respuestas de `route` hasta llamar a la función devuelta. */
+    pause: (route: ApiRoute) => {
+      let release = () => {};
+      paused.set(route, new Promise<void>((resolve) => (release = resolve)));
+      return () => {
+        paused.delete(route);
+        release();
+      };
+    },
     setFailure: (route: ApiRoute, failure: FakeFailure | undefined) => {
       state.failures[route] = failure;
     },
