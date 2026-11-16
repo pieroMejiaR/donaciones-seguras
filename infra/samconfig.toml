@@ -36,6 +36,8 @@ region = "us-east-2"
 [cognito.deploy.parameters]
 stack_name = "donaciones-cognito"
 template_file = "cognito-authorizer.yaml"
+# El trigger Pre-Token Generation crea un rol IAM.
+capabilities = "CAPABILITY_IAM"
 resolve_s3 = true
 confirm_changeset = true
 # Las URL de la SPA publicada (CloudFront) se suman a las de localhost, que usa el desarrollo local.

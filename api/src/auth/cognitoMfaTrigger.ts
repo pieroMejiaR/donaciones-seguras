@@ -9,6 +9,7 @@ import type { UserRole } from "./types.js";
 export interface CognitoPreTokenV2Event {
   triggerSource: string;
   userName: string;
+  userPoolId?: string;
   request: {
     userAttributes: Record<string, string>;
     groupConfiguration?: {
@@ -54,35 +55,51 @@ function hasTotpMfaCompleted(event: CognitoPreTokenV2Event): boolean {
 }
 
 /**
- * Handler del trigger Cognito Pre-Token Generation V2.0 (HU-11).
- * - Exige TOTP MFA activo para usuarios de los grupos GESTOR y AUDITOR.
- * - Propaga `mfa_verified: "true"` al Access Token (ya que Cognito por defecto
- *   solo incluye `amr` en el ID Token).
+ * Consulta a Cognito si el usuario tiene TOTP activado. El evento del trigger no informa qué
+ * factores se usaron, pero con TOTP activado Cognito siempre lo pide al iniciar sesión, así que
+ * un usuario con TOTP activado solo obtiene tokens después de completar el segundo factor.
  */
-export async function preTokenGenerationMfaHandler(
-  event: CognitoPreTokenV2Event,
-): Promise<CognitoPreTokenV2Event> {
-  const groups = event.request.groupConfiguration?.groupsToOverride ?? [];
-  const requiresMfa = groups.some((group) => MFA_REQUIRED_ROLES.has(group as UserRole));
-  const mfaCompleted = hasTotpMfaCompleted(event);
+export type TotpEnabledLookup = (userPoolId: string, userName: string) => Promise<boolean>;
 
-  if (requiresMfa && !mfaCompleted) {
-    throw new Error(
-      "MFA_REQUIRED: Los roles GESTOR y AUDITOR deben tener TOTP MFA configurado y verificado para iniciar sesión.",
-    );
-  }
+/**
+ * Handler del trigger Cognito Pre-Token Generation V2.0 (HU-11).
+ * - Exige TOTP MFA activo para usuarios de los grupos GESTOR y AUDITOR: si no lo tienen, Cognito
+ *   no emite los tokens.
+ * - Propaga `mfa_verified` al Access Token (ya que Cognito por defecto solo incluye `amr` en el
+ *   ID Token), que es lo que revisa requireRoleWithMfa en Lambda.
+ */
+export function createPreTokenGenerationMfaHandler(lookupTotpEnabled?: TotpEnabledLookup) {
+  return async (event: CognitoPreTokenV2Event): Promise<CognitoPreTokenV2Event> => {
+    const groups = event.request.groupConfiguration?.groupsToOverride ?? [];
+    const requiresMfa = groups.some((group) => MFA_REQUIRED_ROLES.has(group as UserRole));
+    let mfaCompleted = hasTotpMfaCompleted(event);
 
-  event.response.claimsAndScopeOverrideDetails = {
-    ...event.response.claimsAndScopeOverrideDetails,
-    accessTokenGeneration: {
-      ...event.response.claimsAndScopeOverrideDetails?.accessTokenGeneration,
-      claimsToAddOrOverride: {
-        ...event.response.claimsAndScopeOverrideDetails?.accessTokenGeneration
-          ?.claimsToAddOrOverride,
-        mfa_verified: mfaCompleted ? "true" : "false",
+    // Solo los roles privilegiados consultan a Cognito: un DONANTE no depende de esta llamada.
+    if (requiresMfa && !mfaCompleted && lookupTotpEnabled && event.userPoolId) {
+      mfaCompleted = await lookupTotpEnabled(event.userPoolId, event.userName);
+    }
+
+    if (requiresMfa && !mfaCompleted) {
+      throw new Error(
+        "MFA_REQUIRED: Los roles GESTOR y AUDITOR deben tener TOTP MFA configurado y verificado para iniciar sesión.",
+      );
+    }
+
+    event.response.claimsAndScopeOverrideDetails = {
+      ...event.response.claimsAndScopeOverrideDetails,
+      accessTokenGeneration: {
+        ...event.response.claimsAndScopeOverrideDetails?.accessTokenGeneration,
+        claimsToAddOrOverride: {
+          ...event.response.claimsAndScopeOverrideDetails?.accessTokenGeneration
+            ?.claimsToAddOrOverride,
+          mfa_verified: mfaCompleted ? "true" : "false",
+        },
       },
-    },
-  };
+    };
 
-  return event;
+    return event;
+  };
 }
+
+/** Versión sin consulta a Cognito: decide solo con los datos del evento. */
+export const preTokenGenerationMfaHandler = createPreTokenGenerationMfaHandler();

@@ -1,5 +1,5 @@
 import { buildAuditEvent, pseudonymize, recordFailedAttempt } from "../audit/audit.js";
-import { extractAuthContext, requireRole, requireScope } from "../auth/index.js";
+import { extractAuthContext, requireRoleWithMfa, requireScope } from "../auth/index.js";
 import { getProject, publishProject } from "../projects/repository.js";
 import { ProjectId, type Project } from "../projects/schemas.js";
 import { ddb, tableName } from "../shared/dynamo.js";
@@ -28,7 +28,7 @@ export const handler = withHttp("projects.publish", async (event) => {
 
   try {
     requireScope(ctx, "api/projects.write");
-    requireRole(ctx, "GESTOR");
+    requireRoleWithMfa(ctx, "GESTOR");
 
     if (!isValidId) {
       throw new NotFoundError("PROJECT_NOT_FOUND", "Proyecto no encontrado");

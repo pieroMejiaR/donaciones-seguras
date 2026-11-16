@@ -1,13 +1,45 @@
 import type { APIGatewayProxyEventV2 } from "aws-lambda";
 
-/** Usuarios de prueba con claims tal como los entrega el JWT authorizer de HTTP API (strings). */
+/** Usuario de prueba: claims del token y scopes concedidos. */
+export interface TestUser {
+  claims: Record<string, unknown>;
+  scopes: string[];
+}
+
+/**
+ * Usuarios de prueba con claims tal como los entrega el JWT authorizer de HTTP API (strings).
+ * mfa_verified lo agrega el trigger Pre-Token Generation a GESTOR y AUDITOR con TOTP (HU-11).
+ */
 export const GESTOR = {
   claims: {
     sub: "11111111-1111-4111-8111-111111111111",
     token_use: "access",
     "cognito:groups": "[GESTOR]",
+    mfa_verified: "true",
   },
   scopes: ["api/projects.write"],
+};
+
+/** GESTOR con un token emitido sin el claim de MFA (T13). */
+export const GESTOR_SIN_MFA = {
+  claims: { ...GESTOR.claims, mfa_verified: "false" },
+  scopes: GESTOR.scopes,
+};
+
+export const AUDITOR = {
+  claims: {
+    sub: "44444444-4444-4444-8444-444444444444",
+    token_use: "access",
+    "cognito:groups": "[AUDITOR]",
+    mfa_verified: "true",
+  },
+  scopes: ["api/audit.read"],
+};
+
+/** AUDITOR con un token emitido sin el claim de MFA (T14). */
+export const AUDITOR_SIN_MFA = {
+  claims: { ...AUDITOR.claims, mfa_verified: "false" },
+  scopes: AUDITOR.scopes,
 };
 
 export const DONANTE = {
@@ -27,7 +59,7 @@ interface EventOptions {
   /** Cuerpo literal, para probar JSON inválido. */
   rawBody?: string;
   headers?: Record<string, string>;
-  user?: { claims: Record<string, unknown>; scopes: string[] };
+  user?: TestUser;
 }
 
 export function apiEvent(options: EventOptions): APIGatewayProxyEventV2 {

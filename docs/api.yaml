@@ -13,8 +13,8 @@ info:
     - API Gateway valida firma, emisor, audiencia, expiración y scope; Lambda vuelve a validar
       scope, rol (`cognito:groups`) y propietario del recurso.
 
-    Estado de implementación: todas las rutas están implementadas salvo `GET /v1/audit`, que es
-    la extensión HU-10.
+    Estado de implementación: todas las rutas están implementadas, incluida la extensión HU-10
+    (`GET /v1/audit`).
   contact:
     name: Santiago Callocondo (backend)
 servers:
@@ -279,7 +279,10 @@ paths:
       tags: [audit]
       operationId: listAuditEvents
       summary: Eventos de auditoría (HU-10, extensión)
-      description: Solo rol AUDITOR con MFA (HU-11). Filtros por tipo y rango de fechas (CA-10.1).
+      description: |
+        Solo rol AUDITOR con TOTP MFA (HU-11, T14). Filtros por tipo y rango de fechas (CA-10.1).
+        Sin tipo, devuelve todas las acciones. Consulta el índice por acción y fecha, nunca hace
+        Scan. Un parámetro desconocido o una fecha inicial posterior a la final responden 400.
       security:
         - cognito: [api/audit.read]
       parameters:
@@ -292,6 +295,9 @@ paths:
         - name: to
           in: query
           schema: { type: string, format: date-time }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
       responses:
         "200":
           description: Eventos que cumplen los filtros, más recientes primero
