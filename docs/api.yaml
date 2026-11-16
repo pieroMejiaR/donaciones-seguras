@@ -85,7 +85,8 @@ paths:
       operationId: createProject
       summary: Crear un proyecto en BORRADOR (HU-08, CA-08.1)
       description: |
-        Solo rol GESTOR. El cuerpo es estricto: cualquier campo extra (`status`,
+        Solo rol GESTOR con TOTP en la sesión (claim `amr`; 403 `MFA_REQUIRED` si falta, HU-11).
+        El cuerpo es estricto: cualquier campo extra (`status`,
         `confirmedAmountCents`, `role`, …) responde 400. Cada intento, exitoso o no, queda en
         auditoría (CA-08.3).
       security:
@@ -132,7 +133,8 @@ paths:
       operationId: publishProject
       summary: Publicar un BORRADOR (HU-08, CA-08.2)
       description: |
-        Solo rol GESTOR. Si el proyecto ya está PUBLICADO, o si otro gestor lo publica a la vez,
+        Solo rol GESTOR con TOTP en la sesión (403 `MFA_REQUIRED` si falta, HU-11).
+        Si el proyecto ya está PUBLICADO, o si otro gestor lo publica a la vez,
         responde 409. No lleva cuerpo.
       security:
         - cognito: [api/projects.write]
@@ -515,7 +517,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Forbidden:
-      description: "Token válido sin permiso: INSUFFICIENT_SCOPE, FORBIDDEN_ROLE. API Gateway responde 403 sin cuerpo uniforme si falta el scope."
+      description: "Token válido sin permiso: INSUFFICIENT_SCOPE, FORBIDDEN_ROLE, MFA_REQUIRED (GESTOR sin TOTP en la sesión, HU-11). API Gateway responde 403 sin cuerpo uniforme si falta el scope."
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

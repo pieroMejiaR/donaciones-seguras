@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { apiEvent } from "../test-utils/events.js";
 import { extractAuthContext, validateTokenOrigin } from "./authorizer.js";
 import { hasMfa, requireMfa, requireRoleWithMfa } from "./authz.js";
-import { type CognitoPreTokenV2Event, preTokenGenerationMfaHandler } from "./cognitoMfaTrigger.js";
 import { ForbiddenError, UnauthorizedError } from "./errors.js";
 import type { CognitoJwtPayload } from "./types.js";
 
@@ -72,7 +71,9 @@ describe("MFA obligatorio, validación de origen y revocación JWT (Día 5)", ()
       }
     });
 
-    it("permite el acceso cuando GESTOR presenta amr con sw_token o mfa_verified", () => {
+    it("permite el acceso cuando GESTOR presenta el amr que Cognito emite tras contraseña y TOTP", () => {
+      // Cognito pone ["pwd", "otp", "mfa"] en el access token; el JWT authorizer de HTTP API
+      // entrega los arreglos como texto entre corchetes.
       const gestorConMfa = apiEvent({
         routeKey: "POST /v1/projects",
         user: {
@@ -80,7 +81,7 @@ describe("MFA obligatorio, validación de origen y revocación JWT (Día 5)", ()
             sub: "gestor-mfa-1",
             token_use: "access",
             "cognito:groups": "[GESTOR]",
-            amr: "[pwd sw_token]",
+            amr: "[pwd otp mfa]",
           },
           scopes: ["api/projects.write"],
         },
@@ -89,34 +90,6 @@ describe("MFA obligatorio, validación de origen y revocación JWT (Día 5)", ()
       const ctx = extractAuthContext(gestorConMfa);
       expect(hasMfa(ctx)).toBe(true);
       expect(() => requireRoleWithMfa(ctx, "GESTOR")).not.toThrow();
-    });
-
-    it("Cognito Pre-Token Trigger bloquea emisión para GESTOR sin TOTP MFA y la propaga si tiene MFA", async () => {
-      const baseTriggerEvent: CognitoPreTokenV2Event = {
-        triggerSource: "TokenGeneration_Authentication",
-        userName: "gestor-test",
-        request: {
-          userAttributes: { sub: "gestor-1", email: "gestor@ejemplo.com" },
-          groupConfiguration: { groupsToOverride: ["GESTOR"] },
-          authenticationMethods: ["pwd"],
-        },
-        response: {},
-      };
-
-      await expect(preTokenGenerationMfaHandler(baseTriggerEvent)).rejects.toThrow(/MFA_REQUIRED/);
-
-      const mfaTriggerEvent: CognitoPreTokenV2Event = {
-        ...baseTriggerEvent,
-        request: {
-          ...baseTriggerEvent.request,
-          authenticationMethods: ["pwd", "SOFTWARE_TOKEN_MFA"],
-        },
-      };
-
-      const result = await preTokenGenerationMfaHandler(mfaTriggerEvent);
-      expect(
-        result.response.claimsAndScopeOverrideDetails?.accessTokenGeneration?.claimsToAddOrOverride,
-      ).toEqual({ mfa_verified: "true" });
     });
   });
 
