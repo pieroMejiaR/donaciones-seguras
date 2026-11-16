@@ -751,6 +751,64 @@ Resources:
                 Action: dynamodb:Query
                 Resource: !Sub ${DonationsTable.Arn}/index/gsi1
 
+  ListAuditEventsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: GET /v1/audit (HU-10), solo AUDITOR con TOTP MFA (HU-11)
+      CodeUri: ../api/dist/listAuditEvents
+      Role: !GetAtt ListAuditEventsRole.Arn
+      LoggingConfig:
+        LogGroup: !Ref ListAuditEventsLogGroup
+      Environment:
+        Variables:
+          AUDIT_TABLE: !Ref AuditEventsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /v1/audit
+            Auth:
+              Authorizer: CognitoJwt
+              AuthorizationScopes:
+                - api/audit.read
+
+  ListAuditEventsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /donaciones/${AWS::StackName}/listAuditEvents
+      RetentionInDays: 14
+
+  ListAuditEventsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Rol de ListAuditEventsFunction. Logs propios y Query sobre el indice gsi1 de AuditEvents.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ListAuditEventsAcceso
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: LogsPropios
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt ListAuditEventsLogGroup.Arn
+              - Sid: ConsultarAuditoriaPorAccionYFecha
+                Effect: Allow
+                Action: dynamodb:Query
+                Resource: !Sub ${AuditEventsTable.Arn}/index/gsi1
+
 Outputs:
   ApiUrl:
     Description: URL base del API, incluido el stage

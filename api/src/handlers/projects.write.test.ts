@@ -7,7 +7,7 @@ import {
 import { mockClient } from "aws-sdk-client-mock";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { pseudonymize } from "../audit/audit.js";
-import { apiEvent, bodyOf, DONANTE, GESTOR } from "../test-utils/events.js";
+import { apiEvent, bodyOf, DONANTE, GESTOR, GESTOR_SIN_MFA, type TestUser } from "../test-utils/events.js";
 import { handler as createProject } from "./createProject.js";
 import { handler as publishProject } from "./publishProject.js";
 
@@ -49,7 +49,7 @@ beforeEach(() => {
 });
 
 describe("POST /v1/projects (HU-08)", () => {
-  const createEvent = (body: unknown, user = GESTOR) =>
+  const createEvent = (body: unknown, user: TestUser = GESTOR) =>
     apiEvent({ routeKey: "POST /v1/projects", body, user });
 
   it("CA-08.1: un GESTOR crea un proyecto en BORRADOR con acumulado 0 y responde 201", async () => {
@@ -134,6 +134,17 @@ describe("POST /v1/projects (HU-08)", () => {
     ]);
   });
 
+  it("T13: un GESTOR sin TOTP MFA recibe 403 MFA_REQUIRED, no se escribe nada y queda auditado DENIED", async () => {
+    const response = await createProject(createEvent(VALID_BODY, GESTOR_SIN_MFA));
+
+    expect(response.statusCode).toBe(403);
+    expect(bodyOf(response)).toMatchObject({ code: "MFA_REQUIRED" });
+    expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(0);
+    expect(failedAuditEvents()).toEqual([
+      expect.objectContaining({ action: "PROJECT_CREATE", outcome: "DENIED", reason: "MFA_REQUIRED" }),
+    ]);
+  });
+
   it("CA-NF02.2: rechaza con 400 campos que decide el servidor (status, acumulado, rol)", async () => {
     const response = await createProject(
       createEvent({
@@ -185,7 +196,7 @@ describe("POST /v1/projects (HU-08)", () => {
 });
 
 describe("POST /v1/projects/{id}/publish (HU-08)", () => {
-  const publishEvent = (id: string, user = GESTOR) =>
+  const publishEvent = (id: string, user: TestUser = GESTOR) =>
     apiEvent({ routeKey: "POST /v1/projects/{id}/publish", pathParameters: { id }, user });
 
   it("CA-08.2: un GESTOR publica un BORRADOR y responde 200 con el proyecto PUBLICADO", async () => {
@@ -277,6 +288,15 @@ describe("POST /v1/projects/{id}/publish (HU-08)", () => {
     const response = await publishProject(publishEvent(DRAFT_ID, DONANTE));
 
     expect(response.statusCode).toBe(403);
+    expect(ddbMock.commandCalls(GetCommand)).toHaveLength(0);
+    expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(0);
+  });
+
+  it("T13: un GESTOR sin TOTP MFA no puede publicar: 403 MFA_REQUIRED sin leer ni escribir", async () => {
+    const response = await publishProject(publishEvent(DRAFT_ID, GESTOR_SIN_MFA));
+
+    expect(response.statusCode).toBe(403);
+    expect(bodyOf(response)).toMatchObject({ code: "MFA_REQUIRED" });
     expect(ddbMock.commandCalls(GetCommand)).toHaveLength(0);
     expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(0);
   });

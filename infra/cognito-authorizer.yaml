@@ -50,9 +50,19 @@ Resources:
           RequireNumbers: true
           RequireSymbols: true
           TemporaryPasswordValidityDays: 7
-      MfaConfiguration: "OPTIONAL"
+      # MFA obligatorio con TOTP (HU-11). Con "ON", el managed login guia a cada usuario a
+      # configurar su app autenticadora la primera vez; con "OPTIONAL" no ofrece hacerlo, y un
+      # GESTOR o AUDITOR no podria activarlo. El trigger exige el TOTP a GESTOR y AUDITOR y
+      # deja mfa_verified en el access token, que es lo que revisa Lambda (requireRoleWithMfa).
+      MfaConfiguration: "ON"
       EnabledMfas:
         - "SOFTWARE_TOKEN_MFA"
+      # Trigger V2_0: personaliza el access token. Requiere el plan Essentials o Plus, el mismo
+      # que exige el managed login (version 2) que ya usa este pool.
+      LambdaConfig:
+        PreTokenGenerationConfig:
+          LambdaArn: !GetAtt PreTokenGenerationFunction.Arn
+          LambdaVersion: V2_0
       AccountRecoverySetting:
         RecoveryMechanisms:
           - Name: verified_email
@@ -64,6 +74,82 @@ Resources:
           AttributeDataType: String
           Required: true
           Mutable: true
+
+
+  # ============================================================================
+  # 1b. Trigger Pre-Token Generation V2.0 (HU-11, T13, T14)
+  # Codigo: api/src/handlers/preTokenGeneration.ts, empaquetado con npm run build.
+  # ============================================================================
+  PreTokenGenerationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: Trigger Pre-Token Generation V2.0. Exige TOTP a GESTOR y AUDITOR y agrega mfa_verified al access token (HU-11)
+      CodeUri: ../api/dist/preTokenGeneration
+      Handler: index.handler
+      Runtime: nodejs22.x
+      Architectures:
+        - arm64
+      MemorySize: 256
+      Timeout: 5
+      Role: !GetAtt PreTokenGenerationRole.Arn
+      LoggingConfig:
+        LogFormat: JSON
+        LogGroup: !Ref PreTokenGenerationLogGroup
+
+  PreTokenGenerationLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /donaciones/${AWS::StackName}/preTokenGeneration
+      RetentionInDays: 14
+
+  PreTokenGenerationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Rol del trigger Pre-Token Generation. Logs propios; AdminGetUser va en una politica aparte.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PreTokenGenerationLogs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: LogsPropios
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt PreTokenGenerationLogGroup.Arn
+
+  # Politica aparte del rol: el pool depende de la funcion (LambdaConfig) y esta politica depende
+  # del pool, asi que dentro del rol formaria una dependencia circular.
+  PreTokenGenerationLeerMfa:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: PreTokenGenerationLeerMfa
+      Roles:
+        - !Ref PreTokenGenerationRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: LeerFactoresDelUsuario
+            Effect: Allow
+            Action: cognito-idp:AdminGetUser
+            Resource: !GetAtt UserPool.Arn
+
+  PreTokenGenerationPermiso:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt PreTokenGenerationFunction.Arn
+      Principal: cognito-idp.amazonaws.com
+      SourceArn: !GetAtt UserPool.Arn
 
   # ============================================================================
   # 2. Resource Server con Scopes personalizados
