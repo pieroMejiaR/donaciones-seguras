@@ -6,8 +6,16 @@ export const GESTOR = {
     sub: "11111111-1111-4111-8111-111111111111",
     token_use: "access",
     "cognito:groups": "[GESTOR]",
+    // amr que pone Cognito tras contrasena y TOTP (HU-11).
+    amr: "[pwd otp mfa]",
   },
   scopes: ["api/projects.write"],
+};
+
+/** GESTOR que entro solo con contrasena: el amr que se leyo de un token real del pool. */
+export const GESTOR_SIN_MFA = {
+  claims: { ...GESTOR.claims, amr: "[pwd]" },
+  scopes: GESTOR.scopes,
 };
 
 export const DONANTE = {
@@ -19,6 +27,12 @@ export const DONANTE = {
   scopes: ["api/donations.*"],
 };
 
+/** Usuario de prueba: claims y scopes como los entrega el JWT authorizer. */
+export interface TestUser {
+  claims: Record<string, unknown>;
+  scopes: string[];
+}
+
 interface EventOptions {
   routeKey: string;
   pathParameters?: Record<string, string>;
@@ -27,7 +41,7 @@ interface EventOptions {
   /** Cuerpo literal, para probar JSON inválido. */
   rawBody?: string;
   headers?: Record<string, string>;
-  user?: { claims: Record<string, unknown>; scopes: string[] };
+  user?: TestUser;
 }
 
 export function apiEvent(options: EventOptions): APIGatewayProxyEventV2 {

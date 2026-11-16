@@ -1,5 +1,5 @@
 import { buildAuditEvent, pseudonymize, recordFailedAttempt } from "../audit/audit.js";
-import { extractAuthContext, requireRole, requireScope } from "../auth/index.js";
+import { extractAuthContext, requireRoleWithMfa, requireScope } from "../auth/index.js";
 import { getProject, publishProject } from "../projects/repository.js";
 import { ProjectId, type Project } from "../projects/schemas.js";
 import { ddb, tableName } from "../shared/dynamo.js";
@@ -13,6 +13,7 @@ import {
 
 /**
  * POST /v1/projects/{id}/publish (HU-08, CA-08.2): un GESTOR publica un BORRADOR.
+ * Exige rol GESTOR con TOTP en la sesión (HU-11, T13).
  * 404 si no existe, 409 si ya estaba publicado o si otro gestor lo publicó al mismo tiempo.
  */
 export const handler = withHttp("projects.publish", async (event) => {
@@ -28,7 +29,7 @@ export const handler = withHttp("projects.publish", async (event) => {
 
   try {
     requireScope(ctx, "api/projects.write");
-    requireRole(ctx, "GESTOR");
+    requireRoleWithMfa(ctx, "GESTOR");
 
     if (!isValidId) {
       throw new NotFoundError("PROJECT_NOT_FOUND", "Proyecto no encontrado");

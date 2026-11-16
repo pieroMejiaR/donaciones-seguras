@@ -27,4 +27,4 @@ Pruebas unitarias en Vitest (`api/src/auth/mfa.test.ts`).
 
 **Estado:** superada en pruebas unitarias de Vitest (`authz`).
 
-**Pendiente en despliegue vivo:** habilitar la ruta `GET /v1/audit` (extensión opcional HU-10) junto con el enlace del trigger Pre-Token Generation v2.0 en Cognito.
+**Pendiente en despliegue vivo:** habilitar la ruta `GET /v1/audit` (extensión opcional HU-10) con `requireRoleWithMfa(ctx, "AUDITOR")`. El pool ya exige TOTP a todos los usuarios y Cognito incluye `amr` en el Access Token, así que no hace falta un trigger (ver `evidence/T13/`).

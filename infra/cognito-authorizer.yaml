@@ -50,7 +50,11 @@ Resources:
           RequireNumbers: true
           RequireSymbols: true
           TemporaryPasswordValidityDays: 7
-      MfaConfiguration: "OPTIONAL"
+      # MFA obligatorio con TOTP (HU-11). Con MFA opcional, el login de Cognito no pide
+      # registrar el autenticador y un GESTOR podia entrar solo con contrasena. Con "ON",
+      # el login pide configurar TOTP en el siguiente inicio de sesion, y Cognito pone en
+      # el access token el claim amr ["pwd", "otp", "mfa"], que requireRoleWithMfa verifica.
+      MfaConfiguration: "ON"
       EnabledMfas:
         - "SOFTWARE_TOKEN_MFA"
       AccountRecoverySetting:

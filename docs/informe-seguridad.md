@@ -23,9 +23,9 @@ La plataforma implementa una arquitectura de seguridad por capas basada en **AWS
    - [`extractAuthContext`](../api/src/auth/authorizer.ts): exige estrictamente `token_use === "access"` (rechaza ID Tokens con 401 `ID_TOKEN_NOT_ALLOWED`), valida expiración `exp`, normaliza `cognito:groups` (tanto arreglos como formato cadena `"[GESTOR]"` de HTTP API) y extrae `amr` / `mfaVerified`.
    - [`authz.ts`](../api/src/auth/authz.ts): verifica roles (`requireRole`, `requireRoleWithMfa`), scopes (`requireScope`) y pertenencia del recurso (`assertOwnership`, `extractDonorSub`).
 4. **MFA TOTP para Roles Privilegiados (HU-11):**
-   - Habilitación de `SOFTWARE_TOKEN_MFA` en el User Pool (`MfaConfiguration: "OPTIONAL"`).
-   - Trigger Pre-Token Generation v2.0 ([`cognitoMfaTrigger.ts`](../api/src/auth/cognitoMfaTrigger.ts)) y guarda [`requireRoleWithMfa`](../api/src/auth/authz.ts) implementados y verificados en pruebas unitarias (T13, T14).
-   - **Estado en el despliegue actual:** el trigger aún no está enlazado al User Pool en [`infra/cognito-authorizer.yaml`](../infra/cognito-authorizer.yaml) y los handlers `createProject` / `publishProject` invocan `requireRole` (sin `requireRoleWithMfa`) para no bloquear a usuarios `GESTOR` mientras no se enlace el trigger y se active TOTP en los usuarios de prueba.
+   - El User Pool exige MFA con TOTP (`MfaConfiguration: "ON"`, `SOFTWARE_TOKEN_MFA`) en [`infra/cognito-authorizer.yaml`](../infra/cognito-authorizer.yaml). El login de Cognito pide registrar la app autenticadora en el siguiente inicio de sesión de cada usuario.
+   - Cognito incluye en el Access Token el claim `amr` con los métodos que el usuario completó: `["pwd", "otp", "mfa"]` tras contraseña y TOTP. `extractAuthContext` lo lee y [`requireRoleWithMfa`](../api/src/auth/authz.ts) exige el rol `GESTOR` con TOTP en `createProject` y `publishProject` (T13).
+   - Se retiró el trigger Pre-Token Generation que se había implementado: dependía de campos que Cognito no envía al trigger (`authenticationMethods` y la preferencia de MFA en `userAttributes`). Conectado, habría impedido el inicio de sesión de todos los usuarios `GESTOR` y `AUDITOR`.
 
 ---
 
@@ -52,8 +52,8 @@ Todas las pruebas de seguridad se automatizaron en Vitest y cuentan con evidenci
 | **T03** | `DONANTE` invocando endpoint de `GESTOR` (ocultar botones no es autorización, HU-04) | **403** `FORBIDDEN_ROLE` | [`authz.test.ts`](../api/src/auth/authz.test.ts), [`projects.write.test.ts`](../api/src/handlers/projects.write.test.ts), [`evidence/T03/`](../evidence/T03/README.md) |
 | **T09** | `DONANTE B` operando donación de `DONANTE A` o enviando `?donorSub=` ajeno (CA-07.2) | **404** `DONATION_NOT_FOUND` en `/simulate`; **403** `FORBIDDEN_OWNERSHIP` en `authz`; `/me` ignora `?donorSub=` | [`ownership.test.ts`](../api/src/auth/ownership.test.ts), [`evidence/T09/`](../evidence/T09/README.md) |
 | **T12** | `GESTOR` o `AUDITOR` intentando crear donación o leer `/me` (CA-04.2) | **403** `INSUFFICIENT_SCOPE` / `FORBIDDEN_ROLE` | [`ownership.test.ts`](../api/src/auth/ownership.test.ts), [`evidence/T12/`](../evidence/T12/README.md) |
-| **T13** | `GESTOR` sin TOTP MFA intentando ejecutar operación privilegiada (HU-11) | **403** `MFA_REQUIRED` (unitario; pendiente enlace de trigger y `requireRoleWithMfa` en vivo) | [`mfa.test.ts`](../api/src/auth/mfa.test.ts), [`evidence/T13/`](../evidence/T13/README.md) |
-| **T14** | `AUDITOR` sin TOTP MFA o `DONANTE` con MFA intentando auditar (HU-11) | **403** `MFA_REQUIRED` / `FORBIDDEN_ROLE` (unitario; pendiente enlace de trigger en vivo) | [`mfa.test.ts`](../api/src/auth/mfa.test.ts), [`evidence/T14/`](../evidence/T14/README.md) |
+| **T13** | `GESTOR` sin TOTP MFA intentando ejecutar operación privilegiada (HU-11) | **403** `MFA_REQUIRED` (unitario en `authz` y en los handlers; en vivo, pendiente del despliegue del pool con MFA obligatorio) | [`mfa.test.ts`](../api/src/auth/mfa.test.ts), [`projects.write.test.ts`](../api/src/handlers/projects.write.test.ts), [`evidence/T13/`](../evidence/T13/README.md) |
+| **T14** | `AUDITOR` sin TOTP MFA o `DONANTE` con MFA intentando auditar (HU-11) | **403** `MFA_REQUIRED` / `FORBIDDEN_ROLE` (unitario; en vivo requiere `GET /v1/audit`, HU-10, que no está implementado) | [`mfa.test.ts`](../api/src/auth/mfa.test.ts), [`evidence/T14/`](../evidence/T14/README.md) |
 | **CA-03.4** | Limitación de revocación de Access Token tras revocar Refresh Token | Token aceptado antes de `exp`; **401** `TOKEN_EXPIRED` tras expirar | [`mfa.test.ts`](../api/src/auth/mfa.test.ts), [`evidence/CA-03.4/`](../evidence/CA-03.4/README.md) |
 
 ---
@@ -67,9 +67,9 @@ Todas las pruebas de seguridad se automatizaron en Vitest y cuentan con evidenci
    - En las pruebas de protocolo contra Cognito se verificó que el servidor autoriza solicitudes hacia `/oauth2/authorize` sin `code_challenge` si el cliente las omite; por lo tanto, el cumplimiento de PKCE (`S256`) depende de la SPA (`oidc-client-ts`), que lo envía en todo flujo.
 3. **Registro abierto en Managed Login (`AllowAdminCreateUserOnly: false`):**
    - Cualquier usuario puede autoregistrarse en la pantalla de login alojada; sin embargo, al crearse sin membresía en `cognito:groups`, la capa `authz` en Lambda bloquea cualquier operación restringida a `DONANTE`, `GESTOR` o `AUDITOR` (403 Forbidden).
-4. **Ausencia de `amr` por defecto en Access Tokens de Cognito y estado actual en vivo:**
-   - Cognito incluye `amr` en el ID Token de forma predeterminada, pero requiere un trigger **Pre-Token Generation V2.0** (tier Essentials) para inyectar `mfa_verified` dentro del Access Token que reciben API Gateway y las Lambdas.
-   - Al corte actual del sistema desplegado, `infra/cognito-authorizer.yaml` mantiene `MfaConfiguration: "OPTIONAL"` sin el trigger conectado aún y `createProject` / `publishProject` emplean `requireRole`; por lo tanto, el bloqueo real a un `GESTOR` sin TOTP en AWS requiere conectar el trigger en el stack de Cognito y conmutar luego los handlers a `requireRoleWithMfa`.
+4. **MFA obligatorio para todos los usuarios, no solo para los roles privilegiados:**
+   - Cognito no permite exigir MFA solo a algunos grupos. Con MFA opcional, el login no pide registrar TOTP y habría que construir ese registro en la SPA. Por eso el pool exige TOTP a todos los usuarios, incluidos los donantes, lo que es más estricto que HU-11.
+   - Cognito completa sin segundo factor el primer inicio de sesión de un usuario recién registrado. Ese usuario no tiene grupo; si después se le asigna `GESTOR`, la API rechaza sus operaciones con `MFA_REQUIRED` mientras su `amr` no incluya `mfa`, también tras renovar el token, porque Cognito conserva `amr` en la renovación.
 
 ---
 
